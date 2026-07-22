@@ -1,0 +1,36 @@
+# .NET
+bin/
+obj/
+TestResults/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Native/CMake
+build/
+out/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+Makefile
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+
+# Runtime and local state
+artifacts/
+logs/
+data/
+*.bak
+*.tmp
+*.epsx
+
+# IDE and OS
+.agents/
+.idea/
+.vscode/
+Thumbs.db
+Desktop.ini

@@ -1,0 +1,76 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 28,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "windows-debug",
+      "displayName": "Windows Debug",
+      "generator": "Visual Studio 17 2022",
+      "architecture": {
+        "value": "x64",
+        "strategy": "set"
+      },
+      "binaryDir": "${sourceDir}/build/native/windows-debug",
+      "cacheVariables": {
+        "BUILD_TESTING": "ON"
+      }
+    },
+    {
+      "name": "windows-analyze",
+      "displayName": "Windows MSVC Analyze",
+      "inherits": "windows-debug",
+      "binaryDir": "${sourceDir}/build/native/windows-analyze",
+      "cacheVariables": {
+        "EXTERNAL_PEEPSIGHT_ENABLE_ANALYZE": "ON"
+      }
+    },
+    {
+      "name": "windows-asan",
+      "displayName": "Windows AddressSanitizer",
+      "inherits": "windows-debug",
+      "binaryDir": "${sourceDir}/build/native/windows-asan",
+      "cacheVariables": {
+        "EXTERNAL_PEEPSIGHT_ENABLE_ASAN": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-debug",
+      "configurePreset": "windows-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "windows-analyze",
+      "configurePreset": "windows-analyze",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-asan",
+      "configurePreset": "windows-asan",
+      "configuration": "Debug"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "windows-debug",
+      "configurePreset": "windows-debug",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-asan",
+      "configurePreset": "windows-asan",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

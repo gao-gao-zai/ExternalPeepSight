@@ -1,0 +1,12 @@
+* text=auto
+*.cs text eol=crlf
+*.xaml text eol=crlf
+*.cpp text eol=crlf
+*.h text eol=crlf
+*.cmake text eol=crlf
+*.md text eol=crlf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.svg text
+

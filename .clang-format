@@ -1,0 +1,10 @@
+---
+Language: Cpp
+BasedOnStyle: Microsoft
+IndentWidth: 4
+ColumnLimit: 120
+BreakBeforeBraces: Allman
+AllowShortFunctionsOnASingleLine: Empty
+SortIncludes: CaseSensitive
+...
+
