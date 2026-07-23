@@ -2,17 +2,25 @@
 
 Windows 外置准星软件。
 
+## 文档
+
+- [需求规格说明](docs/需求文档.md)
+- [技术实现方案](docs/技术实现方案.md)
+- [项目实施计划](docs/项目实施计划.md)
+
 ## 技术栈
 
-- 配置界面：C#、.NET 10、WPF、MVVM
+- 配置界面：C#、.NET 10、Avalonia 12 Desktop、FluentAvalonia 3.x、MVVM
 - 覆盖引擎：C++20、Win32、Direct3D 11、Direct2D、DirectWrite、WIC、DirectComposition
 - 构建：.NET CLI、CMake、MSVC、Windows SDK
+
+UI 初始目标基线为 Avalonia 12.1.0 和 FluentAvaloniaUI 3.0.2。应用只使用 `FluentAvaloniaTheme`，不与 `Avalonia.Themes.Fluent` 混用；Avalonia 官方包保持相同版本，所有包使用固定版本。
 
 ## 工程结构
 
 ```text
 docs/                         需求和技术方案
-src/ExternalPeepSight.UI/     WPF 配置界面
+src/ExternalPeepSight.UI/     配置界面（当前为待迁移的 WPF 骨架）
 src/ExternalPeepSight.Core/   跨 UI 和 Host 的领域模型
 src/ExternalPeepSight.Host/   原生覆盖引擎
 tests/                         .NET 单元测试
