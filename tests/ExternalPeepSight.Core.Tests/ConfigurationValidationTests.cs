@@ -127,6 +127,7 @@ public sealed class ConfigurationValidationTests
     {
         ConfigurationDocument seed = ConfigurationDefaults.Create();
         KeyIdentity validKey = new(30, false, KeyModifiers.Ctrl | KeyModifiers.Shift);
+        KeyIdentity secondValidKey = new(48, false, KeyModifiers.Ctrl | KeyModifiers.Shift);
         ConfigurationDocument missingKeys = seed with
         {
             Switches = seed.Switches with
@@ -140,12 +141,83 @@ public sealed class ConfigurationValidationTests
             Switches = seed.Switches with
             {
                 SwitchA = new HotkeyBinding(HotkeyActivationMode.Hold, null, null, null, validKey),
-                SwitchB = new HotkeyBinding(HotkeyActivationMode.Toggle, validKey, null, null, null),
+                SwitchB = new HotkeyBinding(HotkeyActivationMode.Toggle, secondValidKey, null, null, null),
             },
         };
 
         Assert.False(ConfigurationValidator.Validate(missingKeys).IsValid);
         Assert.True(ConfigurationValidator.Validate(validKeys).IsValid);
+    }
+
+    [Fact]
+    public void HotkeyModesRejectIrrelevantKeys()
+    {
+        ConfigurationDocument seed = ConfigurationDefaults.Create();
+        KeyIdentity keyA = new(30, false, KeyModifiers.None);
+        KeyIdentity keyB = new(48, false, KeyModifiers.None);
+        ConfigurationDocument document = seed with
+        {
+            Switches = seed.Switches with
+            {
+                SwitchA = new HotkeyBinding(HotkeyActivationMode.Unbound, keyA, null, null, null),
+                SwitchB = new HotkeyBinding(HotkeyActivationMode.Toggle, keyA, keyB, null, null),
+            },
+        };
+
+        ConfigurationValidationResult result = ConfigurationValidator.Validate(document);
+
+        Assert.Contains(result.Issues, issue => issue.Message == "Unbound mode cannot contain keys.");
+        Assert.Contains(result.Issues, issue => issue.Message == "Toggle mode can contain only a toggle key.");
+    }
+
+    [Fact]
+    public void DuplicateActiveHotkeysAcrossSwitchesAreRejected()
+    {
+        ConfigurationDocument seed = ConfigurationDefaults.Create();
+        KeyIdentity duplicate = new(30, false, KeyModifiers.Ctrl);
+        ConfigurationDocument document = seed with
+        {
+            Switches = seed.Switches with
+            {
+                SwitchA = new HotkeyBinding(HotkeyActivationMode.Toggle, duplicate, null, null, null),
+                SwitchB = new HotkeyBinding(HotkeyActivationMode.Hold, null, null, null, duplicate),
+            },
+        };
+
+        ConfigurationValidationResult result = ConfigurationValidator.Validate(document);
+
+        Assert.Contains(result.Issues, issue =>
+            issue.Path == "$.switches.switchB.holdKey" &&
+            issue.Message.Contains("$.switches.switchA.toggleKey", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(30, false, KeyModifiers.Win)]
+    [InlineData(91, true, KeyModifiers.None)]
+    [InlineData(15, false, KeyModifiers.Alt)]
+    [InlineData(1, false, KeyModifiers.Ctrl)]
+    [InlineData(83, true, KeyModifiers.Ctrl | KeyModifiers.Alt)]
+    [InlineData(88, false, KeyModifiers.None)]
+    public void SystemReservedHotkeysAreRejected(
+        ushort scanCode,
+        bool extended,
+        KeyModifiers modifiers)
+    {
+        ConfigurationDocument seed = ConfigurationDefaults.Create();
+        KeyIdentity reserved = new(scanCode, extended, modifiers);
+        ConfigurationDocument document = seed with
+        {
+            Switches = seed.Switches with
+            {
+                SwitchA = new HotkeyBinding(HotkeyActivationMode.Toggle, reserved, null, null, null),
+            },
+        };
+
+        ConfigurationValidationResult result = ConfigurationValidator.Validate(document);
+
+        Assert.Contains(result.Issues, issue =>
+            issue.Path == "$.switches.switchA.toggleKey" &&
+            issue.Message.Contains("System-reserved", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -10,14 +10,23 @@ FetchContent_MakeAvailable(googletest)
 
 add_executable(ExternalPeepSight.Native.Tests
     host_infrastructure_tests.cpp
+    input_system_tests.cpp
+    ipc_protocol_tests.cpp
+    named_pipe_server_tests.cpp
     prototype_contracts_tests.cpp
     smoke_test.cpp
+    ../../src/ExternalPeepSight.Host/current_user_security.cpp
     ../../src/ExternalPeepSight.Host/diagnostics.cpp
     ../../src/ExternalPeepSight.Host/host_snapshot.cpp
     ../../src/ExternalPeepSight.Host/host_threads.cpp
+    ../../src/ExternalPeepSight.Host/input_system.cpp
+    ../../src/ExternalPeepSight.Host/ipc_endpoint.cpp
+    ../../src/ExternalPeepSight.Host/ipc_protocol.cpp
     ../../src/ExternalPeepSight.Host/monitor_descriptor.cpp
+    ../../src/ExternalPeepSight.Host/named_pipe_server.cpp
     ../../src/ExternalPeepSight.Host/prototype_contracts.cpp
     ../../src/ExternalPeepSight.Host/render_recovery.cpp
+    ../../src/ExternalPeepSight.Host/single_instance.cpp
 )
 
 target_include_directories(ExternalPeepSight.Native.Tests PRIVATE
@@ -44,8 +53,13 @@ if(MSVC)
 endif()
 
 target_link_libraries(ExternalPeepSight.Native.Tests PRIVATE
+    advapi32
+    bcrypt
     GTest::gtest_main
+    shell32
     user32
+    windowsapp
+    wtsapi32
 )
 
 include(GoogleTest)
@@ -59,6 +73,7 @@ add_test(
     COMMAND $<TARGET_FILE:ExternalPeepSight.Host>
         --focus-monitor
         --smoke-test
+        --instance-id=smoke-focus
         --metrics-output=${CMAKE_CURRENT_BINARY_DIR}/host-smoke-metrics.csv
 )
 
@@ -71,6 +86,7 @@ add_test(
     COMMAND $<TARGET_FILE:ExternalPeepSight.Host>
         --all-monitors
         --smoke-test
+        --instance-id=smoke-all
         --metrics-output=${CMAKE_CURRENT_BINARY_DIR}/host-all-monitors-metrics.csv
 )
 

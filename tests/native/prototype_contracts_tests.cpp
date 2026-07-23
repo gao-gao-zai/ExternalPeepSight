@@ -17,6 +17,44 @@ TEST(OverlayWindowContract, UsesRequiredNonActivatingTransparentStyles)
     EXPECT_EQ(HTTRANSPARENT, external_peepsight::overlay_hit_test_result());
 }
 
+TEST(OverlayWindowContract, CentersPrototypeBoundsWithoutCoveringTheMonitor)
+{
+    const RECT monitor{0, 0, 1920, 1080};
+
+    const RECT bounds = external_peepsight::calculate_prototype_overlay_bounds(monitor);
+
+    EXPECT_EQ(896, bounds.left);
+    EXPECT_EQ(508, bounds.top);
+    EXPECT_EQ(1024, bounds.right);
+    EXPECT_EQ(572, bounds.bottom);
+}
+
+TEST(OverlayWindowContract, PreservesHalfPixelMonitorCenterForOddDimensions)
+{
+    const RECT monitor{100, 200, 2019, 1279};
+
+    const RECT bounds = external_peepsight::calculate_prototype_overlay_bounds(monitor);
+
+    EXPECT_EQ(995, bounds.left);
+    EXPECT_EQ(707, bounds.top);
+    EXPECT_EQ(1124, bounds.right);
+    EXPECT_EQ(772, bounds.bottom);
+    EXPECT_FLOAT_EQ(1059.5F, static_cast<float>(bounds.left + bounds.right) / 2.0F);
+    EXPECT_FLOAT_EQ(739.5F, static_cast<float>(bounds.top + bounds.bottom) / 2.0F);
+}
+
+TEST(OverlayWindowContract, UsesEntireMonitorWhenItIsSmallerThanPrototypeBounds)
+{
+    const RECT monitor{-50, -25, 50, 25};
+
+    const RECT bounds = external_peepsight::calculate_prototype_overlay_bounds(monitor);
+
+    EXPECT_EQ(monitor.left, bounds.left);
+    EXPECT_EQ(monitor.top, bounds.top);
+    EXPECT_EQ(monitor.right, bounds.right);
+    EXPECT_EQ(monitor.bottom, bounds.bottom);
+}
+
 TEST(CrosshairGeometry, CentersCardinalArmsInPhysicalPixels)
 {
     const external_peepsight::CrosshairGeometry geometry =

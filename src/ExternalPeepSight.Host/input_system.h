@@ -1,0 +1,275 @@
+#pragma once
+
+#include "host_threads.h"
+
+#include <windows.h>
+
+#include <cstdint>
+#include <functional>
+#include <memory>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace external_peepsight
+{
+/// Identifies the modifier keys required by an input binding.
+enum class InputModifiers : std::uint8_t
+{
+    none = 0U,
+    ctrl = 1U,
+    alt = 2U,
+    shift = 4U,
+    win = 8U,
+};
+
+/// Returns the bitwise union of two modifier sets.
+[[nodiscard]] constexpr InputModifiers operator|(const InputModifiers left, const InputModifiers right) noexcept
+{
+    return static_cast<InputModifiers>(static_cast<std::uint8_t>(left) | static_cast<std::uint8_t>(right));
+}
+
+/// Returns the bitwise intersection of two modifier sets.
+[[nodiscard]] constexpr InputModifiers operator&(const InputModifiers left, const InputModifiers right) noexcept
+{
+    return static_cast<InputModifiers>(static_cast<std::uint8_t>(left) & static_cast<std::uint8_t>(right));
+}
+
+/// Identifies one physical keyboard key and its required modifiers.
+struct InputKeyIdentity
+{
+    /// Hardware scan code.
+    std::uint16_t scan_code;
+    /// Whether the key uses an E0 or E1 extended scan-code prefix.
+    bool extended;
+    /// Modifiers that must be held when the key is pressed.
+    InputModifiers modifiers;
+
+    bool operator==(const InputKeyIdentity &) const = default;
+};
+
+/// Identifies one physical key independently of modifier state.
+struct InputPhysicalKey
+{
+    /// Hardware scan code.
+    std::uint16_t scan_code;
+    /// Whether the key uses an E0 or E1 extended scan-code prefix.
+    bool extended;
+
+    bool operator==(const InputPhysicalKey &) const = default;
+};
+
+/// Selects how a binding changes its logical switch.
+enum class InputActivationMode
+{
+    unbound,
+    independent,
+    toggle,
+    hold,
+};
+
+/// Identifies one of the two Host-owned logical switches.
+enum class InputLogicalSwitch
+{
+    a,
+    b,
+};
+
+/// Selects how the two logical switches control overlay visibility.
+enum class InputVisibilityRule
+{
+    switch_a,
+    switch_b,
+    both,
+    either,
+};
+
+/// Defines all keys associated with one logical switch.
+struct InputHotkeyBinding
+{
+    /// Activation behavior for this logical switch.
+    InputActivationMode mode = InputActivationMode::unbound;
+    /// Key used by Toggle mode.
+    std::optional<InputKeyIdentity> toggle_key;
+    /// Key that enables Independent mode.
+    std::optional<InputKeyIdentity> enable_key;
+    /// Key that disables Independent mode.
+    std::optional<InputKeyIdentity> disable_key;
+    /// Key held by Hold mode.
+    std::optional<InputKeyIdentity> hold_key;
+};
+
+/// Defines the complete input configuration consumed by the Host.
+struct InputConfiguration
+{
+    /// Rule that combines the two logical switches.
+    InputVisibilityRule visibility_rule = InputVisibilityRule::switch_a;
+    /// Initial state of logical switch A.
+    bool initial_state_a = false;
+    /// Initial state of logical switch B.
+    bool initial_state_b = false;
+    /// Binding for logical switch A.
+    InputHotkeyBinding switch_a;
+    /// Binding for logical switch B.
+    InputHotkeyBinding switch_b;
+};
+
+/// Operation produced by one configured input binding.
+enum class InputSwitchOperation
+{
+    enable,
+    disable,
+    toggle,
+    hold,
+};
+
+/// Identifies the logical operation associated with one input event.
+struct InputAction
+{
+    /// Logical switch changed by the action.
+    InputLogicalSwitch target;
+    /// State transition applied to the logical switch.
+    InputSwitchOperation operation;
+
+    bool operator==(const InputAction &) const = default;
+};
+
+/// Binding evaluated from Raw Input or the low-level hook fallback.
+struct RawInputBinding
+{
+    /// Physical key and modifier identity matched by Raw Input.
+    InputKeyIdentity key;
+    /// Logical action produced by a matching transition.
+    InputAction action;
+};
+
+/// Binding registered with the system-wide RegisterHotKey API.
+struct RegisteredHotkeyBinding
+{
+    /// Identifier passed to RegisterHotKey.
+    int identifier;
+    /// Original physical key identity used for diagnostics.
+    InputKeyIdentity key;
+    /// Virtual key passed to RegisterHotKey.
+    UINT virtual_key;
+    /// Modifier flags passed to RegisterHotKey.
+    UINT native_modifiers;
+    /// Logical action produced by WM_HOTKEY.
+    InputAction action;
+};
+
+/// Validated backend assignment for one complete input configuration.
+struct InputBindingPlan
+{
+    /// Bindings handled by Raw Input or its low-level-hook fallback.
+    std::vector<RawInputBinding> raw_bindings;
+    /// Bindings handled exclusively by RegisterHotKey.
+    std::vector<RegisteredHotkeyBinding> registered_hotkeys;
+};
+
+/// Current logical input state published by the Input thread.
+struct InputStateSnapshot
+{
+    /// Current state of logical switch A.
+    bool switch_a;
+    /// Current state of logical switch B.
+    bool switch_b;
+    /// Evaluated overlay visibility.
+    bool visible;
+    /// Whether a valid input configuration is active.
+    bool configured;
+
+    bool operator==(const InputStateSnapshot &) const = default;
+};
+
+/// Result of applying input configuration to live Win32 registrations.
+struct InputApplyResult
+{
+    /// Whether all native registrations were applied.
+    bool applied;
+    /// Win32 error associated with a registration failure.
+    DWORD win32_error;
+    /// Key whose registration or rollback failed.
+    std::optional<InputKeyIdentity> failed_key;
+    /// Stable developer-facing failure description.
+    std::string message;
+};
+
+/// Parses and validates the switches section of a configuration snapshot.
+[[nodiscard]] InputConfiguration parse_input_configuration(std::string_view snapshot_json);
+
+/// Validates bindings and assigns each action to exactly one input backend.
+[[nodiscard]] InputBindingPlan build_input_binding_plan(const InputConfiguration &configuration);
+
+/// Evaluates logical switch state for the configured visibility rule.
+[[nodiscard]] bool evaluate_input_visibility(InputVisibilityRule rule, bool switch_a, bool switch_b) noexcept;
+
+/// Deterministic logical-switch state machine shared by all input backends.
+class HotkeyStateMachine
+{
+  public:
+    /// Replaces all bindings and restores the configured initial switch state.
+    [[nodiscard]] InputStateSnapshot configure(const InputConfiguration &configuration,
+                                               std::vector<RawInputBinding> raw_bindings);
+
+    /// Handles one physical key transition and suppresses repeated key-down events.
+    [[nodiscard]] std::optional<InputStateSnapshot> handle_key(InputKeyIdentity key, bool pressed);
+
+    /// Applies one action delivered by RegisterHotKey.
+    [[nodiscard]] std::optional<InputStateSnapshot> trigger_registered(InputAction action);
+
+    /// Releases all pressed keys and active Hold bindings.
+    [[nodiscard]] std::optional<InputStateSnapshot> reset_pressed_keys();
+
+    /// Returns the current logical state.
+    [[nodiscard]] InputStateSnapshot snapshot(bool configured = true) const noexcept;
+
+  private:
+    struct ActiveHold
+    {
+        InputPhysicalKey key;
+        InputLogicalSwitch target;
+    };
+
+    [[nodiscard]] std::optional<InputStateSnapshot> apply(InputAction action);
+    [[nodiscard]] bool &state(InputLogicalSwitch target) noexcept;
+
+    InputVisibilityRule visibility_rule_ = InputVisibilityRule::switch_a;
+    bool switch_a_ = false;
+    bool switch_b_ = false;
+    std::vector<RawInputBinding> raw_bindings_;
+    std::vector<InputPhysicalKey> pressed_keys_;
+    std::vector<ActiveHold> active_holds_;
+};
+
+/// Owns the hidden Input-thread window and all global keyboard backends.
+class GlobalInputService
+{
+  public:
+    /// Callback invoked on the Input thread after observable state changes.
+    using StateChanged = std::function<void(InputStateSnapshot)>;
+
+    /// Creates an input service with a non-blocking state publication callback.
+    explicit GlobalInputService(StateChanged state_changed);
+
+    GlobalInputService(const GlobalInputService &) = delete;
+    GlobalInputService &operator=(const GlobalInputService &) = delete;
+
+    /// Stops all input capture and releases native registrations.
+    ~GlobalInputService();
+
+    /// Starts the hidden input window and waits until a backend is available.
+    void start();
+
+    /// Applies configuration synchronously on the Input thread.
+    [[nodiscard]] InputApplyResult apply_configuration(const InputConfiguration &configuration);
+
+    /// Requests shutdown and waits for the Input thread.
+    void stop() noexcept;
+
+  private:
+    class Impl;
+    std::unique_ptr<Impl> impl_;
+};
+} // namespace external_peepsight

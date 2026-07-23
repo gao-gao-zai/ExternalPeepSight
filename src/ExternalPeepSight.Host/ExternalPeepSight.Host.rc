@@ -1,0 +1,7 @@
+#include "resource.h"
+
+STRINGTABLE
+BEGIN
+    IDS_TRAY_OPEN_SETTINGS "Open settings"
+    IDS_TRAY_EXIT "Exit"
+END

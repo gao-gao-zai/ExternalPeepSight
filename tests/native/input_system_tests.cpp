@@ -1,0 +1,267 @@
+#include "input_system.h"
+
+#include <winrt/base.h>
+
+#include <gtest/gtest.h>
+
+#include <atomic>
+#include <stdexcept>
+#include <string>
+
+namespace
+{
+using external_peepsight::HotkeyStateMachine;
+using external_peepsight::InputActivationMode;
+using external_peepsight::InputConfiguration;
+using external_peepsight::InputHotkeyBinding;
+using external_peepsight::InputKeyIdentity;
+using external_peepsight::InputLogicalSwitch;
+using external_peepsight::InputModifiers;
+using external_peepsight::InputSwitchOperation;
+using external_peepsight::InputVisibilityRule;
+using external_peepsight::RawInputBinding;
+
+constexpr InputKeyIdentity kKeyA{0x1EU, false, InputModifiers::none};
+constexpr InputKeyIdentity kKeyB{0x30U, false, InputModifiers::none};
+constexpr InputKeyIdentity kCtrlKeyA{0x1EU, false, InputModifiers::ctrl};
+
+[[nodiscard]] InputConfiguration unbound_configuration()
+{
+    return {};
+}
+
+[[nodiscard]] InputHotkeyBinding toggle_binding(const InputKeyIdentity key)
+{
+    return {InputActivationMode::toggle, key, std::nullopt, std::nullopt, std::nullopt};
+}
+
+[[nodiscard]] InputHotkeyBinding independent_binding(const InputKeyIdentity enable, const InputKeyIdentity disable)
+{
+    return {InputActivationMode::independent, std::nullopt, enable, disable, std::nullopt};
+}
+
+[[nodiscard]] InputHotkeyBinding hold_binding(const InputKeyIdentity key)
+{
+    return {InputActivationMode::hold, std::nullopt, std::nullopt, std::nullopt, key};
+}
+
+[[nodiscard]] std::string valid_snapshot(const std::string_view modifiers = "none")
+{
+    return "{\"switches\":{\"visibilityRule\":\"either\",\"initialStateA\":false,\"initialStateB\":true,"
+           "\"switchA\":{\"mode\":\"toggle\",\"toggleKey\":{\"scanCode\":30,\"extended\":false,\"modifiers\":\"" +
+           std::string(modifiers) +
+           "\"},\"enableKey\":null,\"disableKey\":null,\"holdKey\":null},"
+           "\"switchB\":{\"mode\":\"unbound\",\"toggleKey\":null,\"enableKey\":null,\"disableKey\":null,"
+           "\"holdKey\":null}}}";
+}
+
+TEST(HotkeyStateMachine, ToggleChangesOnceAndSuppressesRepeatedKeyDown)
+{
+    HotkeyStateMachine state_machine;
+    InputConfiguration configuration = unbound_configuration();
+    configuration.switch_a = toggle_binding(kKeyA);
+    static_cast<void>(
+        state_machine.configure(configuration, {{kKeyA, {InputLogicalSwitch::a, InputSwitchOperation::toggle}}}));
+
+    const auto first = state_machine.handle_key(kKeyA, true);
+    const auto repeated = state_machine.handle_key(kKeyA, true);
+
+    ASSERT_TRUE(first.has_value());
+    EXPECT_TRUE(first->switch_a);
+    EXPECT_FALSE(repeated.has_value());
+}
+
+TEST(HotkeyStateMachine, IndependentBindingsEnableAndDisableTheirSwitch)
+{
+    HotkeyStateMachine state_machine;
+    InputConfiguration configuration = unbound_configuration();
+    configuration.switch_a = independent_binding(kKeyA, kKeyB);
+    static_cast<void>(
+        state_machine.configure(configuration, {{kKeyA, {InputLogicalSwitch::a, InputSwitchOperation::enable}},
+                                                {kKeyB, {InputLogicalSwitch::a, InputSwitchOperation::disable}}}));
+
+    ASSERT_TRUE(state_machine.handle_key(kKeyA, true).has_value());
+    static_cast<void>(state_machine.handle_key(kKeyA, false));
+    const auto disabled = state_machine.handle_key(kKeyB, true);
+
+    ASSERT_TRUE(disabled.has_value());
+    EXPECT_FALSE(disabled->switch_a);
+}
+
+TEST(HotkeyStateMachine, HoldClearsOnKeyUpEvenAfterModifierStateChanges)
+{
+    HotkeyStateMachine state_machine;
+    InputConfiguration configuration = unbound_configuration();
+    configuration.switch_a = hold_binding(kCtrlKeyA);
+    static_cast<void>(
+        state_machine.configure(configuration, {{kCtrlKeyA, {InputLogicalSwitch::a, InputSwitchOperation::hold}}}));
+
+    const auto pressed = state_machine.handle_key(kCtrlKeyA, true);
+    const auto released =
+        state_machine.handle_key({kCtrlKeyA.scan_code, kCtrlKeyA.extended, InputModifiers::none}, false);
+
+    ASSERT_TRUE(pressed.has_value());
+    EXPECT_TRUE(pressed->switch_a);
+    ASSERT_TRUE(released.has_value());
+    EXPECT_FALSE(released->switch_a);
+}
+
+TEST(HotkeyStateMachine, ResetClearsAnActiveHold)
+{
+    HotkeyStateMachine state_machine;
+    InputConfiguration configuration = unbound_configuration();
+    configuration.switch_b = hold_binding(kKeyB);
+    static_cast<void>(
+        state_machine.configure(configuration, {{kKeyB, {InputLogicalSwitch::b, InputSwitchOperation::hold}}}));
+    static_cast<void>(state_machine.handle_key(kKeyB, true));
+
+    const auto reset = state_machine.reset_pressed_keys();
+
+    ASSERT_TRUE(reset.has_value());
+    EXPECT_FALSE(reset->switch_b);
+}
+
+TEST(HotkeyStateMachine, ReconfigurationRestoresInitialStateAndVisibilityRule)
+{
+    HotkeyStateMachine state_machine;
+    InputConfiguration configuration = unbound_configuration();
+    configuration.visibility_rule = InputVisibilityRule::both;
+    configuration.initial_state_a = true;
+    configuration.initial_state_b = false;
+
+    const auto snapshot = state_machine.configure(configuration, {});
+
+    EXPECT_TRUE(snapshot.switch_a);
+    EXPECT_FALSE(snapshot.switch_b);
+    EXPECT_FALSE(snapshot.visible);
+}
+
+TEST(HotkeyStateMachine, RegisteredActionsApplyAndRejectHold)
+{
+    HotkeyStateMachine state_machine;
+    static_cast<void>(state_machine.configure(unbound_configuration(), {}));
+
+    const auto enabled = state_machine.trigger_registered({InputLogicalSwitch::a, InputSwitchOperation::enable});
+    const auto toggled = state_machine.trigger_registered({InputLogicalSwitch::a, InputSwitchOperation::toggle});
+
+    ASSERT_TRUE(enabled.has_value());
+    EXPECT_TRUE(enabled->switch_a);
+    ASSERT_TRUE(toggled.has_value());
+    EXPECT_FALSE(toggled->switch_a);
+    EXPECT_THROW(
+        static_cast<void>(state_machine.trigger_registered({InputLogicalSwitch::a, InputSwitchOperation::hold})),
+        std::invalid_argument);
+}
+
+TEST(InputVisibility, EvaluatesEveryVisibilityRule)
+{
+    EXPECT_TRUE(external_peepsight::evaluate_input_visibility(InputVisibilityRule::switch_a, true, false));
+    EXPECT_TRUE(external_peepsight::evaluate_input_visibility(InputVisibilityRule::switch_b, false, true));
+    EXPECT_TRUE(external_peepsight::evaluate_input_visibility(InputVisibilityRule::both, true, true));
+    EXPECT_FALSE(external_peepsight::evaluate_input_visibility(InputVisibilityRule::both, true, false));
+    EXPECT_TRUE(external_peepsight::evaluate_input_visibility(InputVisibilityRule::either, false, true));
+    EXPECT_FALSE(external_peepsight::evaluate_input_visibility(InputVisibilityRule::either, false, false));
+}
+
+TEST(InputBindingPlan, AssignsModifiedActionsToRegisterHotKeyAndBareOrHoldActionsToRawInput)
+{
+    InputConfiguration configuration = unbound_configuration();
+    configuration.switch_a = toggle_binding(kCtrlKeyA);
+    configuration.switch_b = hold_binding(kKeyB);
+
+    const auto plan = external_peepsight::build_input_binding_plan(configuration);
+
+    ASSERT_EQ(1U, plan.registered_hotkeys.size());
+    EXPECT_EQ(kCtrlKeyA, plan.registered_hotkeys.front().key);
+    ASSERT_EQ(1U, plan.raw_bindings.size());
+    EXPECT_EQ(kKeyB, plan.raw_bindings.front().key);
+}
+
+TEST(InputBindingPlan, RejectsDuplicateBindingsAcrossSwitches)
+{
+    InputConfiguration configuration = unbound_configuration();
+    configuration.switch_a = toggle_binding(kKeyA);
+    configuration.switch_b = hold_binding(kKeyA);
+
+    EXPECT_THROW(static_cast<void>(external_peepsight::build_input_binding_plan(configuration)), std::invalid_argument);
+}
+
+TEST(InputBindingPlan, RejectsModeSpecificMissingAndExtraKeys)
+{
+    InputConfiguration unbound_with_key = unbound_configuration();
+    unbound_with_key.switch_a.toggle_key = kKeyA;
+    InputConfiguration toggle_with_extra = unbound_configuration();
+    toggle_with_extra.switch_a = toggle_binding(kKeyA);
+    toggle_with_extra.switch_a.hold_key = kKeyB;
+    InputConfiguration independent_missing_key = unbound_configuration();
+    independent_missing_key.switch_a = independent_binding(kKeyA, kKeyB);
+    independent_missing_key.switch_a.disable_key.reset();
+
+    EXPECT_THROW(static_cast<void>(external_peepsight::build_input_binding_plan(unbound_with_key)),
+                 std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(external_peepsight::build_input_binding_plan(toggle_with_extra)),
+                 std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(external_peepsight::build_input_binding_plan(independent_missing_key)),
+                 std::invalid_argument);
+}
+
+TEST(InputBindingPlan, RejectsSystemReservedShortcuts)
+{
+    InputConfiguration win_binding = unbound_configuration();
+    win_binding.switch_a = toggle_binding({0x1EU, false, InputModifiers::win});
+    InputConfiguration bare_windows_key = unbound_configuration();
+    bare_windows_key.switch_a = toggle_binding({0x5BU, true, InputModifiers::none});
+    InputConfiguration alt_tab = unbound_configuration();
+    alt_tab.switch_a = toggle_binding({0x0FU, false, InputModifiers::alt});
+    InputConfiguration f12 = unbound_configuration();
+    f12.switch_a = toggle_binding({0x58U, false, InputModifiers::none});
+
+    EXPECT_THROW(static_cast<void>(external_peepsight::build_input_binding_plan(win_binding)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(external_peepsight::build_input_binding_plan(bare_windows_key)),
+                 std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(external_peepsight::build_input_binding_plan(alt_tab)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(external_peepsight::build_input_binding_plan(f12)), std::invalid_argument);
+}
+
+TEST(InputConfigurationParser, AcceptsFlagEnumFormattingAndRejectsUnknownContent)
+{
+    winrt::init_apartment(winrt::apartment_type::multi_threaded);
+
+    const InputConfiguration parsed = external_peepsight::parse_input_configuration(valid_snapshot("ctrl, shift"));
+    EXPECT_EQ(InputModifiers::ctrl | InputModifiers::shift, parsed.switch_a.toggle_key->modifiers);
+
+    std::string unknown_modifier = valid_snapshot("meta");
+    EXPECT_THROW(static_cast<void>(external_peepsight::parse_input_configuration(unknown_modifier)),
+                 std::invalid_argument);
+
+    std::string unknown_property = valid_snapshot();
+    unknown_property.replace(unknown_property.find("\"initialStateA\""), std::string("\"initialStateA\"").size(),
+                             "\"unexpected\"");
+    EXPECT_THROW(static_cast<void>(external_peepsight::parse_input_configuration(unknown_property)),
+                 std::invalid_argument);
+}
+
+TEST(GlobalInputService, StartsAppliesConfigurationAndAllowsRepeatedStop)
+{
+    std::atomic<unsigned int> callback_count = 0U;
+    std::atomic<bool> last_visible = false;
+    external_peepsight::GlobalInputService service(
+        [&callback_count, &last_visible](const external_peepsight::InputStateSnapshot state)
+        {
+            last_visible.store(state.visible, std::memory_order_release);
+            callback_count.fetch_add(1U, std::memory_order_relaxed);
+        });
+    InputConfiguration configuration = unbound_configuration();
+    configuration.initial_state_a = true;
+
+    service.start();
+    const external_peepsight::InputApplyResult result = service.apply_configuration(configuration);
+    service.stop();
+    service.stop();
+
+    EXPECT_TRUE(result.applied);
+    EXPECT_EQ(ERROR_SUCCESS, result.win32_error);
+    EXPECT_GE(callback_count.load(std::memory_order_relaxed), 1U);
+    EXPECT_TRUE(last_visible.load(std::memory_order_acquire));
+}
+} // namespace

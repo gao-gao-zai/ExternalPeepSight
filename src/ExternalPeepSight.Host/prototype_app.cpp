@@ -3,19 +3,29 @@
 #include "diagnostics.h"
 #include "host_snapshot.h"
 #include "host_threads.h"
+#include "input_system.h"
+#include "ipc_endpoint.h"
+#include "ipc_protocol.h"
 #include "monitor_descriptor.h"
+#include "named_pipe_server.h"
+#include "process_lifecycle.h"
 #include "prototype_contracts.h"
 #include "render_recovery.h"
+#include "single_instance.h"
+#include "tray_icon.h"
 
 #include <d2d1_1.h>
 #include <d2d1helper.h>
 #include <d3d11.h>
 #include <dcomp.h>
+#include <dwmapi.h>
 #include <dxgi1_2.h>
 #include <psapi.h>
 #include <shellapi.h>
 #include <wincodec.h>
 #include <wrl/client.h>
+
+#include <winrt/base.h>
 
 #include <algorithm>
 #include <array>
@@ -47,6 +57,8 @@ constexpr wchar_t kControllerClassName[] = L"ExternalPeepSight.Prototype.Control
 constexpr wchar_t kOverlayClassName[] = L"ExternalPeepSight.Prototype.Overlay";
 constexpr UINT kRebuildMonitorsMessage = WM_APP + 1U;
 constexpr UINT kForegroundChangedMessage = WM_APP + 2U;
+constexpr UINT kTrayMessage = WM_APP + 3U;
+constexpr UINT kInputStateChangedMessage = WM_APP + 4U;
 constexpr UINT_PTR kMetricsTimerId = 1U;
 constexpr UINT_PTR kShutdownTimerId = 2U;
 constexpr int kExitHotkeyId = 1;
@@ -86,6 +98,8 @@ struct PrototypeOptions
     DisplayMode display_mode = DisplayMode::focus_monitor;
     UINT automatic_exit_ms = 0U;
     std::filesystem::path metrics_output;
+    std::filesystem::path settings_ui_path;
+    std::wstring instance_id = L"default";
     bool suppress_dialogs = false;
 };
 
@@ -143,6 +157,24 @@ struct PrototypeOptions
                     throw std::invalid_argument("Metrics output path cannot be empty.");
                 }
                 options.metrics_output = std::filesystem::path(value);
+            }
+            else if (argument.starts_with(L"--instance-id="))
+            {
+                const std::wstring_view value = argument.substr(std::wstring_view(L"--instance-id=").size());
+                if (value.empty())
+                {
+                    throw std::invalid_argument("Host instance identifier cannot be empty.");
+                }
+                options.instance_id = value;
+            }
+            else if (argument.starts_with(L"--ui-path="))
+            {
+                const std::wstring_view value = argument.substr(std::wstring_view(L"--ui-path=").size());
+                if (value.empty())
+                {
+                    throw std::invalid_argument("Settings UI path cannot be empty.");
+                }
+                options.settings_ui_path = std::filesystem::path(value);
             }
             else
             {
@@ -681,20 +713,36 @@ class OverlayWindow
 {
   public:
     OverlayWindow(_In_ HINSTANCE instance, _In_ HWND controller, const MonitorDescriptor &monitor)
-        : controller_(controller), monitor_(monitor)
+        : controller_(controller), monitor_(monitor),
+          window_bounds_px_(calculate_prototype_overlay_bounds(monitor.bounds_px))
     {
-        const int width = monitor_.bounds_px.right - monitor_.bounds_px.left;
-        const int height = monitor_.bounds_px.bottom - monitor_.bounds_px.top;
+        const int width = window_bounds_px_.right - window_bounds_px_.left;
+        const int height = window_bounds_px_.bottom - window_bounds_px_.top;
         window_ = CreateWindowExW(overlay_extended_style(), kOverlayClassName, L"", overlay_window_style(),
-                                  monitor_.bounds_px.left, monitor_.bounds_px.top, width, height, nullptr, nullptr,
+                                  window_bounds_px_.left, window_bounds_px_.top, width, height, nullptr, nullptr,
                                   instance, this);
         if (window_ == nullptr)
         {
             throw_last_error("Create overlay window");
         }
-        if (!SetLayeredWindowAttributes(window_, 0U, 255U, LWA_ALPHA))
+
+        try
         {
-            throw_last_error("SetLayeredWindowAttributes");
+            // DWM can add visible borders or shadows around a transparent top-level window.
+            const DWMNCRENDERINGPOLICY non_client_rendering_policy = DWMNCRP_DISABLED;
+            throw_if_failed(DwmSetWindowAttribute(window_, DWMWA_NCRENDERING_POLICY, &non_client_rendering_policy,
+                                                  sizeof(non_client_rendering_policy)),
+                            "Disable overlay non-client rendering");
+            if (!SetLayeredWindowAttributes(window_, 0U, 255U, LWA_ALPHA))
+            {
+                throw_last_error("SetLayeredWindowAttributes");
+            }
+        }
+        catch (...)
+        {
+            DestroyWindow(window_);
+            window_ = nullptr;
+            throw;
         }
     }
 
@@ -717,8 +765,8 @@ class OverlayWindow
 
     [[nodiscard]] RenderTargetDescriptor render_target() const noexcept
     {
-        return {window_, static_cast<UINT>(monitor_.bounds_px.right - monitor_.bounds_px.left),
-                static_cast<UINT>(monitor_.bounds_px.bottom - monitor_.bounds_px.top)};
+        return {window_, static_cast<UINT>(window_bounds_px_.right - window_bounds_px_.left),
+                static_cast<UINT>(window_bounds_px_.bottom - window_bounds_px_.top)};
     }
 
     void set_visible(const bool visible)
@@ -731,9 +779,9 @@ class OverlayWindow
             return;
         }
 
-        const int width = monitor_.bounds_px.right - monitor_.bounds_px.left;
-        const int height = monitor_.bounds_px.bottom - monitor_.bounds_px.top;
-        if (!SetWindowPos(window_, HWND_TOPMOST, monitor_.bounds_px.left, monitor_.bounds_px.top, width, height,
+        const int width = window_bounds_px_.right - window_bounds_px_.left;
+        const int height = window_bounds_px_.bottom - window_bounds_px_.top;
+        if (!SetWindowPos(window_, HWND_TOPMOST, window_bounds_px_.left, window_bounds_px_.top, width, height,
                           SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW))
         {
             throw_last_error("SetWindowPos overlay");
@@ -802,6 +850,7 @@ class OverlayWindow
     ThreadAffinity window_thread_;
     HWND controller_ = nullptr;
     MonitorDescriptor monitor_;
+    RECT window_bounds_px_{};
     HWND window_ = nullptr;
     bool visible_ = false;
 };
@@ -912,26 +961,40 @@ class MetricsRecorder
 class OverlayApplication
 {
   public:
-    OverlayApplication(_In_ HINSTANCE instance, PrototypeOptions options)
+    OverlayApplication(_In_ HINSTANCE instance, PrototypeOptions options, const IpcEndpoint &ipc_endpoint)
         : instance_(instance), options_(std::move(options)),
-          input_thread_(HostThreadRole::input,
-                        [](const std::stop_token stop_token)
-                        {
-                            log_diagnostic(DiagnosticLevel::information, "thread.input.started",
-                                           "Input thread lifecycle is running.");
-                            wait_for_stop(stop_token);
-                            log_diagnostic(DiagnosticLevel::information, "thread.input.stopped",
-                                           "Input thread lifecycle stopped.");
-                        }),
-          ipc_thread_(HostThreadRole::ipc,
-                      [](const std::stop_token stop_token)
-                      {
-                          log_diagnostic(DiagnosticLevel::information, "thread.ipc.started",
-                                         "IPC thread lifecycle is running.");
-                          wait_for_stop(stop_token);
-                          log_diagnostic(DiagnosticLevel::information, "thread.ipc.stopped",
-                                         "IPC thread lifecycle stopped.");
-                      }),
+          input_service_(
+              [this](const InputStateSnapshot state)
+              {
+                  const HWND target = input_notification_target_.load(std::memory_order_acquire);
+                  if (target != nullptr)
+                  {
+                      const WPARAM packed_state = (state.switch_a ? 1U : 0U) | (state.switch_b ? 1U << 1U : 0U) |
+                                                  (state.visible ? 1U << 2U : 0U) | (state.configured ? 1U << 3U : 0U);
+                      PostMessageW(target, kInputStateChangedMessage, packed_state, 0);
+                  }
+              }),
+          ipc_host_state_(
+              [this](const std::string_view snapshot_json)
+              {
+                  InputConfiguration configuration;
+                  try
+                  {
+                      configuration = parse_input_configuration(snapshot_json);
+                  }
+                  catch (const std::exception &error)
+                  {
+                      throw IpcClientError(L"InvalidInputConfiguration", winrt::to_hstring(error.what()).c_str());
+                  }
+
+                  const InputApplyResult result = input_service_.apply_configuration(configuration);
+                  if (!result.applied)
+                  {
+                      throw IpcClientError(L"InputRegistrationFailed", winrt::to_hstring(result.message).c_str());
+                  }
+              }),
+          ipc_server_(ipc_endpoint, ipc_host_state_),
+          ipc_thread_(HostThreadRole::ipc, [this](const std::stop_token stop_token) { ipc_server_.run(stop_token); }),
           renderer_(snapshots_)
     {
     }
@@ -1018,7 +1081,13 @@ class OverlayApplication
         }
 
         g_foreground_hook_target.store(controller_, std::memory_order_release);
-        input_thread_.start();
+        input_notification_target_.store(controller_, std::memory_order_release);
+        taskbar_created_message_ = RegisterWindowMessageW(L"TaskbarCreated");
+        if (!options_.suppress_dialogs)
+        {
+            tray_icon_.initialize(controller_, kTrayMessage);
+        }
+        input_service_.start();
         ipc_thread_.start();
         renderer_.start();
         metrics_.initialize(options_.metrics_output);
@@ -1136,9 +1205,10 @@ class OverlayApplication
         const HMONITOR selected_monitor = active_monitor();
         for (const std::unique_ptr<OverlayWindow> &overlay : overlays_)
         {
-            const bool visible =
+            const bool monitor_selected =
                 options_.display_mode == DisplayMode::all_monitors || overlay->monitor_handle() == selected_monitor;
-            overlay->set_visible(visible);
+            const bool input_visible = !switch_visibility_configured_ || switch_visibility_;
+            overlay->set_visible(monitor_selected && input_visible);
         }
     }
 
@@ -1154,7 +1224,11 @@ class OverlayApplication
     LRESULT handle_controller_message(_In_ HWND window, const UINT message, const WPARAM word_parameter,
                                       const LPARAM long_parameter)
     {
-        UNREFERENCED_PARAMETER(long_parameter);
+        if (taskbar_created_message_ != 0U && message == taskbar_created_message_)
+        {
+            tray_icon_.restore_after_taskbar_created();
+            return 0;
+        }
 
         switch (message)
         {
@@ -1166,6 +1240,32 @@ class OverlayApplication
         case kForegroundChangedMessage:
             reassert_topmost();
             return 0;
+        case kInputStateChangedMessage:
+            switch_visibility_ = (word_parameter & (1U << 2U)) != 0U;
+            switch_visibility_configured_ = (word_parameter & (1U << 3U)) != 0U;
+            update_overlay_visibility();
+            return 0;
+        case kTrayMessage:
+        {
+            const UINT event = LOWORD(long_parameter);
+            if (event == WM_LBUTTONDBLCLK)
+            {
+                static_cast<void>(launch_settings_ui(options_.settings_ui_path, options_.instance_id));
+            }
+            else if (event == WM_CONTEXTMENU || event == WM_RBUTTONUP)
+            {
+                const TrayCommand command = tray_icon_.show_context_menu();
+                if (command == TrayCommand::open_settings)
+                {
+                    static_cast<void>(launch_settings_ui(options_.settings_ui_path, options_.instance_id));
+                }
+                else if (command == TrayCommand::exit_host)
+                {
+                    DestroyWindow(window);
+                }
+            }
+            return 0;
+        }
         case WM_TIMER:
             if (word_parameter == kMetricsTimerId)
             {
@@ -1186,6 +1286,7 @@ class OverlayApplication
             DestroyWindow(window);
             return 0;
         case WM_DESTROY:
+            tray_icon_.reset();
             controller_ = nullptr;
             PostQuitMessage(exit_code_);
             return 0;
@@ -1230,6 +1331,8 @@ class OverlayApplication
         }
 
         g_foreground_hook_target.store(nullptr, std::memory_order_release);
+        input_notification_target_.store(nullptr, std::memory_order_release);
+        tray_icon_.reset();
 
         if (foreground_hook_ != nullptr)
         {
@@ -1256,10 +1359,9 @@ class OverlayApplication
         }
         overlays_.clear();
         renderer_.stop();
-        input_thread_.request_stop();
         ipc_thread_.request_stop();
-        input_thread_.join();
         ipc_thread_.join();
+        input_service_.stop();
 
         if (controller_ != nullptr)
         {
@@ -1278,7 +1380,6 @@ class OverlayApplication
         }
         try
         {
-            input_thread_.rethrow_if_failed();
             ipc_thread_.rethrow_if_failed();
         }
         catch (const std::exception &error)
@@ -1312,16 +1413,23 @@ class OverlayApplication
     HWND controller_ = nullptr;
     HWINEVENTHOOK foreground_hook_ = nullptr;
     AtomicHostSnapshot snapshots_;
-    HostWorkerThread input_thread_;
+    std::atomic<HWND> input_notification_target_ = nullptr;
+    GlobalInputService input_service_;
+    IpcHostState ipc_host_state_;
+    NamedPipeServer ipc_server_;
     HostWorkerThread ipc_thread_;
     RenderCoordinator renderer_;
     MetricsRecorder metrics_;
+    TrayIcon tray_icon_;
     std::vector<std::unique_ptr<OverlayWindow>> overlays_;
     std::uint64_t next_snapshot_version_ = 1U;
+    UINT taskbar_created_message_ = 0U;
     int exit_code_ = EXIT_SUCCESS;
     bool controller_class_registered_ = false;
     bool overlay_class_registered_ = false;
     bool hotkey_registered_ = false;
+    bool switch_visibility_configured_ = false;
+    bool switch_visibility_ = true;
 };
 } // namespace
 
@@ -1331,8 +1439,30 @@ int run_overlay_prototype(_In_ const HINSTANCE instance)
     try
     {
         options = parse_options();
-        OverlayApplication application(instance, options);
-        return application.run();
+        SingleInstanceGuard single_instance(options.instance_id);
+        if (single_instance.already_running())
+        {
+            log_diagnostic(DiagnosticLevel::information, "host.already_running",
+                           "Another Host instance already owns this namespace.");
+            return EXIT_SUCCESS;
+        }
+
+        IpcEndpointRegistration endpoint(options.instance_id, !options.suppress_dialogs);
+        OverlayApplication application(instance, options, endpoint.endpoint());
+        const int exit_code = application.run();
+        if (exit_code == EXIT_SUCCESS)
+        {
+            try
+            {
+                endpoint.mark_graceful_shutdown();
+            }
+            catch (const std::exception &error)
+            {
+                log_diagnostic(DiagnosticLevel::error, "ipc.graceful_shutdown_marker_failed", error.what());
+                return EXIT_FAILURE;
+            }
+        }
+        return exit_code;
     }
     catch (const std::exception &error)
     {

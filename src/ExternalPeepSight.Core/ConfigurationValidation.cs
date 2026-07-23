@@ -366,6 +366,7 @@ public static class ConfigurationValidator
 
         ValidateHotkey(switches.SwitchA, "$.switches.switchA", issues);
         ValidateHotkey(switches.SwitchB, "$.switches.switchB", issues);
+        ValidateUniqueHotkeys(switches, issues);
     }
 
     private static void ValidateHotkey(
@@ -387,14 +388,51 @@ public static class ConfigurationValidator
 
         switch (binding.Mode)
         {
-            case HotkeyActivationMode.Toggle when binding.ToggleKey is null:
-                issues.Add(new ValidationIssue($"{path}.toggleKey", "Toggle mode requires a toggle key."));
+            case HotkeyActivationMode.Unbound:
+                if (binding.ToggleKey is not null ||
+                    binding.EnableKey is not null ||
+                    binding.DisableKey is not null ||
+                    binding.HoldKey is not null)
+                {
+                    issues.Add(new ValidationIssue(path, "Unbound mode cannot contain keys."));
+                }
+
                 break;
-            case HotkeyActivationMode.Independent when binding.EnableKey is null || binding.DisableKey is null:
-                issues.Add(new ValidationIssue($"{path}", "Independent mode requires enable and disable keys."));
+            case HotkeyActivationMode.Toggle:
+                if (binding.ToggleKey is null)
+                {
+                    issues.Add(new ValidationIssue($"{path}.toggleKey", "Toggle mode requires a toggle key."));
+                }
+
+                if (binding.EnableKey is not null || binding.DisableKey is not null || binding.HoldKey is not null)
+                {
+                    issues.Add(new ValidationIssue(path, "Toggle mode can contain only a toggle key."));
+                }
+
                 break;
-            case HotkeyActivationMode.Hold when binding.HoldKey is null:
-                issues.Add(new ValidationIssue($"{path}.holdKey", "Hold mode requires a hold key."));
+            case HotkeyActivationMode.Independent:
+                if (binding.EnableKey is null || binding.DisableKey is null)
+                {
+                    issues.Add(new ValidationIssue(path, "Independent mode requires enable and disable keys."));
+                }
+
+                if (binding.ToggleKey is not null || binding.HoldKey is not null)
+                {
+                    issues.Add(new ValidationIssue(path, "Independent mode can contain only enable and disable keys."));
+                }
+
+                break;
+            case HotkeyActivationMode.Hold:
+                if (binding.HoldKey is null)
+                {
+                    issues.Add(new ValidationIssue($"{path}.holdKey", "Hold mode requires a hold key."));
+                }
+
+                if (binding.ToggleKey is not null || binding.EnableKey is not null || binding.DisableKey is not null)
+                {
+                    issues.Add(new ValidationIssue(path, "Hold mode can contain only a hold key."));
+                }
+
                 break;
         }
 
@@ -427,6 +465,87 @@ public static class ConfigurationValidator
         {
             issues.Add(new ValidationIssue(path, "Key modifiers contain unknown flags."));
         }
+
+        if (IsSystemReserved(key.Value))
+        {
+            issues.Add(new ValidationIssue(path, "System-reserved shortcuts cannot be assigned."));
+        }
+    }
+
+    private static void ValidateUniqueHotkeys(
+        SwitchConfiguration switches,
+        List<ValidationIssue> issues)
+    {
+        var assignedKeys = new Dictionary<KeyIdentity, string>();
+        foreach ((KeyIdentity Key, string Path) assignment in ActiveHotkeys(switches.SwitchA, "$.switches.switchA")
+                     .Concat(ActiveHotkeys(switches.SwitchB, "$.switches.switchB")))
+        {
+            if (assignedKeys.TryGetValue(assignment.Key, out string? existingPath))
+            {
+                issues.Add(new ValidationIssue(
+                    assignment.Path,
+                    $"Hotkey duplicates the binding at {existingPath}."));
+            }
+            else
+            {
+                assignedKeys.Add(assignment.Key, assignment.Path);
+            }
+        }
+    }
+
+    private static IEnumerable<(KeyIdentity Key, string Path)> ActiveHotkeys(
+        HotkeyBinding? binding,
+        string path)
+    {
+        if (binding is null || !Enum.IsDefined(binding.Mode))
+        {
+            yield break;
+        }
+
+        switch (binding.Mode)
+        {
+            case HotkeyActivationMode.Toggle when binding.ToggleKey is { } toggle:
+                yield return (toggle, $"{path}.toggleKey");
+                break;
+            case HotkeyActivationMode.Independent:
+                if (binding.EnableKey is { } enable)
+                {
+                    yield return (enable, $"{path}.enableKey");
+                }
+
+                if (binding.DisableKey is { } disable)
+                {
+                    yield return (disable, $"{path}.disableKey");
+                }
+
+                break;
+            case HotkeyActivationMode.Hold when binding.HoldKey is { } hold:
+                yield return (hold, $"{path}.holdKey");
+                break;
+        }
+    }
+
+    private static bool IsSystemReserved(KeyIdentity key)
+    {
+        const ushort EscapeScanCode = 0x01;
+        const ushort TabScanCode = 0x0F;
+        const ushort DeleteScanCode = 0x53;
+        const ushort F12ScanCode = 0x58;
+        const ushort LeftWindowsScanCode = 0x5B;
+        const ushort RightWindowsScanCode = 0x5C;
+
+        bool alt = key.Modifiers.HasFlag(KeyModifiers.Alt);
+        bool ctrl = key.Modifiers.HasFlag(KeyModifiers.Ctrl);
+        bool windows = key.Modifiers.HasFlag(KeyModifiers.Win);
+        bool primaryWindowsKey =
+            key.Extended && key.ScanCode is LeftWindowsScanCode or RightWindowsScanCode;
+
+        return windows ||
+               primaryWindowsKey ||
+               key.ScanCode == F12ScanCode ||
+               (alt && key.ScanCode is TabScanCode or EscapeScanCode) ||
+               (ctrl && !alt && key.ScanCode == EscapeScanCode) ||
+               (ctrl && alt && key.Extended && key.ScanCode == DeleteScanCode);
     }
 
     private static void ValidateToasts(

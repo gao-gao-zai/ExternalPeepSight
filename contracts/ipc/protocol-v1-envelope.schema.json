@@ -1,6 +1,164 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "ExternalPeepSight IPC envelope",
+  "$defs": {
+    "configurationVersion": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "emptyPayload": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "maxProperties": 0
+        }
+      ]
+    },
+    "helloPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "token"
+      ],
+      "properties": {
+        "token": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "applySnapshotPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "configurationVersion",
+        "snapshot"
+      ],
+      "properties": {
+        "configurationVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "snapshot": {
+          "type": "object"
+        }
+      }
+    },
+    "ackPayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "command",
+            "hostProcessId",
+            "protocolVersion"
+          ],
+          "properties": {
+            "command": {
+              "const": "Hello"
+            },
+            "hostProcessId": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4294967295
+            },
+            "protocolVersion": {
+              "const": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "command",
+            "configurationVersion",
+            "snapshot"
+          ],
+          "properties": {
+            "command": {
+              "const": "GetState"
+            },
+            "configurationVersion": {
+              "$ref": "#/$defs/configurationVersion"
+            },
+            "snapshot": {
+              "type": [
+                "object",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "command",
+            "configurationVersion",
+            "alreadyApplied"
+          ],
+          "properties": {
+            "command": {
+              "const": "ApplySnapshot"
+            },
+            "configurationVersion": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "alreadyApplied": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    },
+    "errorPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9]{0,63}$"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "hostStatePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "configurationVersion",
+        "snapshot"
+      ],
+      "properties": {
+        "configurationVersion": {
+          "$ref": "#/$defs/configurationVersion"
+        },
+        "snapshot": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      }
+    }
+  },
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -38,5 +196,103 @@
         "null"
       ]
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "Hello"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/helloPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "GetState"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/emptyPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "ApplySnapshot"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/applySnapshotPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "Ack"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/ackPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "Error"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/errorPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "HostStateChanged"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/hostStatePayload"
+          }
+        }
+      }
+    }
+  ]
 }

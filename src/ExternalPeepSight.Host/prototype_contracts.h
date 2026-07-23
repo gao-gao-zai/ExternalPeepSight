@@ -51,6 +51,12 @@ struct CrosshairGeometry
     return HTTRANSPARENT;
 }
 
+/// Calculates the monitor-centered HWND bounds required by the prototype content.
+///
+/// The returned dimensions preserve the monitor's width and height parity so
+/// the Direct2D surface center maps exactly to the full monitor center.
+[[nodiscard]] RECT calculate_prototype_overlay_bounds(const RECT &monitor_bounds_px) noexcept;
+
 /// Calculates centered crosshair geometry in physical pixels.
 ///
 /// Width and height are the target surface dimensions. Gap and arm length are
