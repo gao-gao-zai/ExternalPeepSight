@@ -7,6 +7,7 @@ Windows 外置准星软件。
 - [需求规格说明](docs/需求文档.md)
 - [技术实现方案](docs/技术实现方案.md)
 - [项目实施计划](docs/项目实施计划.md)
+- [阶段 1 验证记录](docs/阶段1验证记录.md)
 
 ## 技术栈
 
@@ -25,6 +26,16 @@ src/ExternalPeepSight.Core/   跨 UI 和 Host 的领域模型
 src/ExternalPeepSight.Host/   原生覆盖引擎
 tests/                         .NET 单元测试
 ```
+
+阶段 1 原生覆盖原型的运行方式：
+
+```powershell
+.\build\native\windows-debug\src\ExternalPeepSight.Host\Debug\ExternalPeepSight.Host.exe --focus-monitor
+.\build\native\windows-debug\src\ExternalPeepSight.Host\Debug\ExternalPeepSight.Host.exe --all-monitors
+.\build\native\windows-debug\src\ExternalPeepSight.Host\Debug\ExternalPeepSight.Host.exe --diagnostics-seconds=60 --metrics-output=artifacts\stage1\metrics.csv
+```
+
+原型使用 `Ctrl+Shift+F12` 退出。`--smoke-test` 用于 CTest，启动后自动退出。阶段 1 的实际验证结果记录在 [阶段 1 验证记录](docs/阶段1验证记录.md)。
 
 ## 构建
 

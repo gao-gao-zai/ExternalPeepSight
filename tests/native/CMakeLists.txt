@@ -9,7 +9,13 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 
 add_executable(ExternalPeepSight.Native.Tests
+    prototype_contracts_tests.cpp
     smoke_test.cpp
+    ../../src/ExternalPeepSight.Host/prototype_contracts.cpp
+)
+
+target_include_directories(ExternalPeepSight.Native.Tests PRIVATE
+    ../../src/ExternalPeepSight.Host
 )
 
 if(MSVC)
@@ -44,8 +50,23 @@ gtest_discover_tests(
 add_test(
     NAME ExternalPeepSight.Host.Starts
     COMMAND $<TARGET_FILE:ExternalPeepSight.Host>
+        --focus-monitor
+        --smoke-test
+        --metrics-output=${CMAKE_CURRENT_BINARY_DIR}/host-smoke-metrics.csv
 )
 
 set_tests_properties(ExternalPeepSight.Host.Starts PROPERTIES
-    TIMEOUT 5
+    TIMEOUT 10
+)
+
+add_test(
+    NAME ExternalPeepSight.Host.AllMonitors
+    COMMAND $<TARGET_FILE:ExternalPeepSight.Host>
+        --all-monitors
+        --smoke-test
+        --metrics-output=${CMAKE_CURRENT_BINARY_DIR}/host-all-monitors-metrics.csv
+)
+
+set_tests_properties(ExternalPeepSight.Host.AllMonitors PROPERTIES
+    TIMEOUT 10
 )

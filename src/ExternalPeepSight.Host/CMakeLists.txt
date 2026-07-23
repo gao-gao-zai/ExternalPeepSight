@@ -1,5 +1,9 @@
 add_executable(ExternalPeepSight.Host WIN32
     main.cpp
+    prototype_app.cpp
+    prototype_app.h
+    prototype_contracts.cpp
+    prototype_contracts.h
 )
 
 target_compile_definitions(ExternalPeepSight.Host PRIVATE
@@ -33,6 +37,9 @@ target_link_libraries(ExternalPeepSight.Host PRIVATE
     dcomp
     dwrite
     dxgi
+    ole32
+    psapi
+    shell32
     user32
     windowscodecs
 )
