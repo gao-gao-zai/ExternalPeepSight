@@ -1,9 +1,19 @@
 add_executable(ExternalPeepSight.Host WIN32
+    diagnostics.cpp
+    diagnostics.h
+    host_snapshot.cpp
+    host_snapshot.h
+    host_threads.cpp
+    host_threads.h
     main.cpp
+    monitor_descriptor.cpp
+    monitor_descriptor.h
     prototype_app.cpp
     prototype_app.h
     prototype_contracts.cpp
     prototype_contracts.h
+    render_recovery.cpp
+    render_recovery.h
 )
 
 target_compile_definitions(ExternalPeepSight.Host PRIVATE

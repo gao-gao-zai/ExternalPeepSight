@@ -1,6 +1,11 @@
 #include "prototype_app.h"
 
+#include "diagnostics.h"
+#include "host_snapshot.h"
+#include "host_threads.h"
+#include "monitor_descriptor.h"
 #include "prototype_contracts.h"
+#include "render_recovery.h"
 
 #include <d2d1_1.h>
 #include <d2d1helper.h>
@@ -15,16 +20,21 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cassert>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
+#include <stop_token>
 #include <string>
 #include <string_view>
+#include <thread>
+#include <utility>
 #include <vector>
 
 namespace external_peepsight
@@ -56,33 +66,6 @@ constexpr std::array<std::uint8_t, 153> kPrototypePng{
 };
 
 std::atomic<HWND> g_foreground_hook_target{nullptr};
-
-class HResultError final : public std::runtime_error
-{
-  public:
-    HResultError(const HRESULT result, const char *operation) : std::runtime_error(operation), result_(result) {}
-
-    [[nodiscard]] HRESULT result() const noexcept
-    {
-        return result_;
-    }
-
-  private:
-    HRESULT result_;
-};
-
-void throw_if_failed(const HRESULT result, const char *operation)
-{
-    if (FAILED(result))
-    {
-        throw HResultError(result, operation);
-    }
-}
-
-[[noreturn]] void throw_last_error(const char *operation)
-{
-    throw HResultError(HRESULT_FROM_WIN32(GetLastError()), operation);
-}
 
 [[nodiscard]] std::uint64_t file_time_value(const FILETIME value) noexcept
 {
@@ -177,57 +160,6 @@ struct PrototypeOptions
     return options;
 }
 
-struct MonitorDescriptor
-{
-    HMONITOR handle = nullptr;
-    RECT bounds{};
-    std::wstring device_name;
-};
-
-BOOL CALLBACK enumerate_monitor(_In_ HMONITOR monitor, _In_opt_ HDC device_context, _In_ LPRECT monitor_rect,
-                                _In_ LPARAM context)
-{
-    UNREFERENCED_PARAMETER(device_context);
-    UNREFERENCED_PARAMETER(monitor_rect);
-
-    auto &monitors = *reinterpret_cast<std::vector<MonitorDescriptor> *>(context);
-    MONITORINFOEXW information{};
-    information.cbSize = sizeof(information);
-    if (!GetMonitorInfoW(monitor, &information))
-    {
-        return FALSE;
-    }
-
-    monitors.push_back({monitor, information.rcMonitor, information.szDevice});
-    return TRUE;
-}
-
-[[nodiscard]] std::vector<MonitorDescriptor> enumerate_monitors()
-{
-    std::vector<MonitorDescriptor> monitors;
-    if (!EnumDisplayMonitors(nullptr, nullptr, enumerate_monitor, reinterpret_cast<LPARAM>(&monitors)))
-    {
-        throw_last_error("EnumDisplayMonitors");
-    }
-
-    std::ranges::sort(monitors,
-                      [](const MonitorDescriptor &left, const MonitorDescriptor &right)
-                      {
-                          if (left.bounds.top != right.bounds.top)
-                          {
-                              return left.bounds.top < right.bounds.top;
-                          }
-                          return left.bounds.left < right.bounds.left;
-                      });
-
-    if (monitors.empty())
-    {
-        throw std::runtime_error("No display monitors were enumerated.");
-    }
-
-    return monitors;
-}
-
 struct PresentStatistics
 {
     std::uint64_t count = 0U;
@@ -248,6 +180,7 @@ class GraphicsDevice
   public:
     void initialize()
     {
+        thread_affinity_.assert_current("GraphicsDevice::initialize");
         reset();
 
         constexpr UINT creation_flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
@@ -312,6 +245,7 @@ class GraphicsDevice
 
     void reset() noexcept
     {
+        assert(thread_affinity_.is_current());
         if (d2d_context_)
         {
             d2d_context_->SetTarget(nullptr);
@@ -331,6 +265,7 @@ class GraphicsDevice
 
     [[nodiscard]] SurfaceResources create_surface(_In_ HWND window, const UINT width_px, const UINT height_px)
     {
+        thread_affinity_.assert_current("GraphicsDevice::create_surface");
         DXGI_SWAP_CHAIN_DESC1 description{};
         description.Width = width_px;
         description.Height = height_px;
@@ -361,6 +296,7 @@ class GraphicsDevice
 
     void release_surface(SurfaceResources &surface) noexcept
     {
+        assert(thread_affinity_.is_current());
         if (d2d_context_)
         {
             d2d_context_->SetTarget(nullptr);
@@ -472,7 +408,7 @@ class GraphicsDevice
         QueryPerformanceCounter(&after);
         if (result == DXGI_ERROR_DEVICE_REMOVED || result == DXGI_ERROR_DEVICE_RESET)
         {
-            throw HResultError(result, "IDXGISwapChain1::Present1 device lost");
+            throw NativeError(result, "IDXGISwapChain1::Present1");
         }
         throw_if_failed(result, "IDXGISwapChain1::Present1");
         throw_if_failed(composition_device_->Commit(), "IDCompositionDevice::Commit");
@@ -485,6 +421,7 @@ class GraphicsDevice
             (std::max)(present_statistics_.maximum_microseconds, elapsed_microseconds);
     }
 
+    ThreadAffinity thread_affinity_;
     ComPtr<ID3D11Device> d3d_device_;
     ComPtr<ID3D11DeviceContext> d3d_context_;
     ComPtr<IDXGIFactory2> dxgi_factory_;
@@ -499,18 +436,258 @@ class GraphicsDevice
     PresentStatistics present_statistics_;
 };
 
+struct RenderTargetDescriptor
+{
+    HWND window = nullptr;
+    UINT width_px = 0U;
+    UINT height_px = 0U;
+};
+
+class RenderCoordinator
+{
+  public:
+    explicit RenderCoordinator(AtomicHostSnapshot &snapshots)
+        : snapshots_(snapshots),
+          worker_(HostThreadRole::render, [this](const std::stop_token stop_token) { run(stop_token); })
+    {
+    }
+
+    RenderCoordinator(const RenderCoordinator &) = delete;
+    RenderCoordinator &operator=(const RenderCoordinator &) = delete;
+
+    ~RenderCoordinator()
+    {
+        stop();
+    }
+
+    void start()
+    {
+        worker_.start();
+
+        std::unique_lock lock(mutex_);
+        state_changed_.wait(lock, [this] { return ready_ || failure_; });
+        const std::exception_ptr failure = failure_;
+        lock.unlock();
+        if (failure)
+        {
+            worker_.join();
+            std::rethrow_exception(failure);
+        }
+        started_ = true;
+    }
+
+    void rebuild(std::vector<RenderTargetDescriptor> targets, const std::uint64_t expected_snapshot_version)
+    {
+        if (!started_)
+        {
+            if (targets.empty())
+            {
+                return;
+            }
+            throw std::logic_error("Render coordinator has not been started.");
+        }
+
+        std::unique_lock lock(mutex_);
+        rethrow_failure_locked();
+        requested_targets_ = std::move(targets);
+        requested_snapshot_version_ = expected_snapshot_version;
+        const std::uint64_t generation = ++requested_generation_;
+        state_changed_.notify_all();
+        state_changed_.wait(lock, [this, generation] { return completed_generation_ >= generation || failure_; });
+        rethrow_failure_locked();
+    }
+
+    [[nodiscard]] PresentStatistics present_statistics() const
+    {
+        std::scoped_lock lock(mutex_);
+        return present_statistics_;
+    }
+
+    void stop() noexcept
+    {
+        if (!started_)
+        {
+            return;
+        }
+
+        worker_.request_stop();
+        state_changed_.notify_all();
+        worker_.join();
+        started_ = false;
+    }
+
+  private:
+    void run(const std::stop_token stop_token)
+    {
+        bool com_initialized = false;
+        GraphicsDevice graphics;
+        std::vector<SurfaceResources> surfaces;
+        DeviceRecoveryStateMachine recovery;
+
+        try
+        {
+            throw_if_failed(CoInitializeEx(nullptr, COINIT_MULTITHREADED), "CoInitializeEx render thread");
+            com_initialized = true;
+            graphics.initialize();
+            recovery.mark_initialized();
+            {
+                std::scoped_lock lock(mutex_);
+                ready_ = true;
+            }
+            state_changed_.notify_all();
+
+            while (!stop_token.stop_requested())
+            {
+                std::vector<RenderTargetDescriptor> targets;
+                std::uint64_t snapshot_version = 0U;
+                std::uint64_t generation = 0U;
+                {
+                    std::unique_lock lock(mutex_);
+                    state_changed_.wait(lock, stop_token,
+                                        [this] { return requested_generation_ > completed_generation_; });
+                    if (stop_token.stop_requested())
+                    {
+                        break;
+                    }
+                    targets = requested_targets_;
+                    snapshot_version = requested_snapshot_version_;
+                    generation = requested_generation_;
+                }
+
+                if (snapshot_version != 0U)
+                {
+                    const auto snapshot = snapshots_.load();
+                    if (!snapshot || snapshot->version != snapshot_version)
+                    {
+                        throw std::logic_error("Render request does not match the published Host snapshot.");
+                    }
+                }
+
+                rebuild_targets(graphics, surfaces, recovery, targets);
+
+                {
+                    std::scoped_lock lock(mutex_);
+                    present_statistics_ = graphics.present_statistics();
+                    completed_generation_ = generation;
+                }
+                state_changed_.notify_all();
+            }
+
+            release_surfaces(graphics, surfaces);
+            graphics.reset();
+        }
+        catch (...)
+        {
+            recovery.mark_failed();
+            {
+                std::scoped_lock lock(mutex_);
+                failure_ = std::current_exception();
+            }
+            state_changed_.notify_all();
+            release_surfaces(graphics, surfaces);
+            graphics.reset();
+            if (com_initialized)
+            {
+                CoUninitialize();
+            }
+            throw;
+        }
+
+        if (com_initialized)
+        {
+            CoUninitialize();
+        }
+    }
+
+    static void release_surfaces(GraphicsDevice &graphics, std::vector<SurfaceResources> &surfaces) noexcept
+    {
+        for (SurfaceResources &surface : surfaces)
+        {
+            graphics.release_surface(surface);
+        }
+        surfaces.clear();
+    }
+
+    static void create_surfaces(GraphicsDevice &graphics, std::vector<SurfaceResources> &surfaces,
+                                const std::vector<RenderTargetDescriptor> &targets)
+    {
+        surfaces.reserve(targets.size());
+        for (const RenderTargetDescriptor &target : targets)
+        {
+            surfaces.push_back(graphics.create_surface(target.window, target.width_px, target.height_px));
+        }
+    }
+
+    static void rebuild_targets(GraphicsDevice &graphics, std::vector<SurfaceResources> &surfaces,
+                                DeviceRecoveryStateMachine &recovery,
+                                const std::vector<RenderTargetDescriptor> &targets)
+    {
+        release_surfaces(graphics, surfaces);
+        try
+        {
+            create_surfaces(graphics, surfaces, targets);
+        }
+        catch (const NativeError &error)
+        {
+            if (!error.is_device_lost())
+            {
+                throw;
+            }
+
+            log_diagnostic(DiagnosticLevel::warning, "render.device_lost", error.what(), error.status());
+            recovery.begin_recovery();
+            release_surfaces(graphics, surfaces);
+            graphics.reset();
+            recovery.mark_targets_released();
+            try
+            {
+                graphics.initialize();
+                create_surfaces(graphics, surfaces, targets);
+                recovery.mark_recreated();
+                log_diagnostic(DiagnosticLevel::information, "render.device_recovered",
+                               "Render resources were recreated in dependency order.");
+            }
+            catch (...)
+            {
+                recovery.mark_failed();
+                throw;
+            }
+        }
+    }
+
+    void rethrow_failure_locked() const
+    {
+        if (failure_)
+        {
+            std::rethrow_exception(failure_);
+        }
+    }
+
+    AtomicHostSnapshot &snapshots_;
+    HostWorkerThread worker_;
+    mutable std::mutex mutex_;
+    std::condition_variable_any state_changed_;
+    std::vector<RenderTargetDescriptor> requested_targets_;
+    PresentStatistics present_statistics_;
+    std::exception_ptr failure_;
+    std::uint64_t requested_snapshot_version_ = 0U;
+    std::uint64_t requested_generation_ = 0U;
+    std::uint64_t completed_generation_ = 0U;
+    bool ready_ = false;
+    bool started_ = false;
+};
+
 class OverlayWindow
 {
   public:
-    OverlayWindow(_In_ HINSTANCE instance, _In_ HWND controller, GraphicsDevice &graphics,
-                  const MonitorDescriptor &monitor)
-        : controller_(controller), graphics_(graphics), monitor_(monitor)
+    OverlayWindow(_In_ HINSTANCE instance, _In_ HWND controller, const MonitorDescriptor &monitor)
+        : controller_(controller), monitor_(monitor)
     {
-        const int width = monitor_.bounds.right - monitor_.bounds.left;
-        const int height = monitor_.bounds.bottom - monitor_.bounds.top;
-        window_ =
-            CreateWindowExW(overlay_extended_style(), kOverlayClassName, L"", overlay_window_style(),
-                            monitor_.bounds.left, monitor_.bounds.top, width, height, nullptr, nullptr, instance, this);
+        const int width = monitor_.bounds_px.right - monitor_.bounds_px.left;
+        const int height = monitor_.bounds_px.bottom - monitor_.bounds_px.top;
+        window_ = CreateWindowExW(overlay_extended_style(), kOverlayClassName, L"", overlay_window_style(),
+                                  monitor_.bounds_px.left, monitor_.bounds_px.top, width, height, nullptr, nullptr,
+                                  instance, this);
         if (window_ == nullptr)
         {
             throw_last_error("Create overlay window");
@@ -519,8 +696,6 @@ class OverlayWindow
         {
             throw_last_error("SetLayeredWindowAttributes");
         }
-
-        surface_ = graphics_.create_surface(window_, static_cast<UINT>(width), static_cast<UINT>(height));
     }
 
     OverlayWindow(const OverlayWindow &) = delete;
@@ -528,7 +703,7 @@ class OverlayWindow
 
     ~OverlayWindow()
     {
-        graphics_.release_surface(surface_);
+        assert(window_thread_.is_current());
         if (window_ != nullptr)
         {
             DestroyWindow(window_);
@@ -540,8 +715,15 @@ class OverlayWindow
         return monitor_.handle;
     }
 
+    [[nodiscard]] RenderTargetDescriptor render_target() const noexcept
+    {
+        return {window_, static_cast<UINT>(monitor_.bounds_px.right - monitor_.bounds_px.left),
+                static_cast<UINT>(monitor_.bounds_px.bottom - monitor_.bounds_px.top)};
+    }
+
     void set_visible(const bool visible)
     {
+        window_thread_.assert_current("OverlayWindow::set_visible");
         if (!visible)
         {
             ShowWindow(window_, SW_HIDE);
@@ -549,9 +731,9 @@ class OverlayWindow
             return;
         }
 
-        const int width = monitor_.bounds.right - monitor_.bounds.left;
-        const int height = monitor_.bounds.bottom - monitor_.bounds.top;
-        if (!SetWindowPos(window_, HWND_TOPMOST, monitor_.bounds.left, monitor_.bounds.top, width, height,
+        const int width = monitor_.bounds_px.right - monitor_.bounds_px.left;
+        const int height = monitor_.bounds_px.bottom - monitor_.bounds_px.top;
+        if (!SetWindowPos(window_, HWND_TOPMOST, monitor_.bounds_px.left, monitor_.bounds_px.top, width, height,
                           SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW))
         {
             throw_last_error("SetWindowPos overlay");
@@ -562,6 +744,7 @@ class OverlayWindow
 
     void reassert_topmost()
     {
+        window_thread_.assert_current("OverlayWindow::reassert_topmost");
         if (!visible_)
         {
             return;
@@ -616,11 +799,10 @@ class OverlayWindow
     }
 
   private:
+    ThreadAffinity window_thread_;
     HWND controller_ = nullptr;
-    GraphicsDevice &graphics_;
     MonitorDescriptor monitor_;
     HWND window_ = nullptr;
-    SurfaceResources surface_;
     bool visible_ = false;
 };
 
@@ -731,7 +913,26 @@ class OverlayApplication
 {
   public:
     OverlayApplication(_In_ HINSTANCE instance, PrototypeOptions options)
-        : instance_(instance), options_(std::move(options))
+        : instance_(instance), options_(std::move(options)),
+          input_thread_(HostThreadRole::input,
+                        [](const std::stop_token stop_token)
+                        {
+                            log_diagnostic(DiagnosticLevel::information, "thread.input.started",
+                                           "Input thread lifecycle is running.");
+                            wait_for_stop(stop_token);
+                            log_diagnostic(DiagnosticLevel::information, "thread.input.stopped",
+                                           "Input thread lifecycle stopped.");
+                        }),
+          ipc_thread_(HostThreadRole::ipc,
+                      [](const std::stop_token stop_token)
+                      {
+                          log_diagnostic(DiagnosticLevel::information, "thread.ipc.started",
+                                         "IPC thread lifecycle is running.");
+                          wait_for_stop(stop_token);
+                          log_diagnostic(DiagnosticLevel::information, "thread.ipc.stopped",
+                                         "IPC thread lifecycle stopped.");
+                      }),
+          renderer_(snapshots_)
     {
     }
 
@@ -763,7 +964,7 @@ class OverlayApplication
             DispatchMessageW(&message);
         }
 
-        metrics_.sample(graphics_.present_statistics());
+        metrics_.sample(renderer_.present_statistics());
         return exit_code_;
     }
 
@@ -798,17 +999,15 @@ class OverlayApplication
   private:
     void initialize()
     {
+        window_thread_.assert_current("OverlayApplication::initialize");
         if (!SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2))
         {
             const DWORD error = GetLastError();
             if (error != ERROR_ACCESS_DENIED)
             {
-                throw HResultError(HRESULT_FROM_WIN32(error), "SetProcessDpiAwarenessContext");
+                throw NativeError(error, "SetProcessDpiAwarenessContext");
             }
         }
-
-        throw_if_failed(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED), "CoInitializeEx");
-        com_initialized_ = true;
 
         register_window_classes();
         controller_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kControllerClassName, L"", WS_POPUP, 0, 0, 0,
@@ -819,7 +1018,9 @@ class OverlayApplication
         }
 
         g_foreground_hook_target.store(controller_, std::memory_order_release);
-        graphics_.initialize();
+        input_thread_.start();
+        ipc_thread_.start();
+        renderer_.start();
         metrics_.initialize(options_.metrics_output);
         rebuild_overlays();
 
@@ -872,30 +1073,35 @@ class OverlayApplication
 
     void rebuild_overlays()
     {
+        window_thread_.assert_current("OverlayApplication::rebuild_overlays");
+        renderer_.rebuild({}, 0U);
         overlays_.clear();
-        try
-        {
-            build_overlays_once();
-        }
-        catch (const HResultError &error)
-        {
-            if (error.result() != DXGI_ERROR_DEVICE_REMOVED && error.result() != DXGI_ERROR_DEVICE_RESET)
-            {
-                throw;
-            }
 
-            overlays_.clear();
-            graphics_.initialize();
-            build_overlays_once();
-        }
-    }
-
-    void build_overlays_once()
-    {
-        for (const MonitorDescriptor &monitor : enumerate_monitors())
+        const std::vector<MonitorDescriptor> monitors = enumerate_monitors();
+        std::vector<SnapshotMonitor> snapshot_monitors;
+        snapshot_monitors.reserve(monitors.size());
+        for (const MonitorDescriptor &monitor : monitors)
         {
-            overlays_.push_back(std::make_unique<OverlayWindow>(instance_, controller_, graphics_, monitor));
+            snapshot_monitors.push_back({monitor.id, monitor.bounds_px});
         }
+
+        const std::uint64_t version = next_snapshot_version_++;
+        const auto snapshot = std::make_shared<const HostSnapshot>(
+            HostSnapshot{version, std::move(snapshot_monitors), options_.display_mode == DisplayMode::all_monitors});
+        if (snapshots_.publish(snapshot) != SnapshotPublishResult::published)
+        {
+            throw std::logic_error("A new Host snapshot could not be published.");
+        }
+
+        std::vector<RenderTargetDescriptor> render_targets;
+        render_targets.reserve(monitors.size());
+        for (const MonitorDescriptor &monitor : monitors)
+        {
+            auto overlay = std::make_unique<OverlayWindow>(instance_, controller_, monitor);
+            render_targets.push_back(overlay->render_target());
+            overlays_.push_back(std::move(overlay));
+        }
+        renderer_.rebuild(std::move(render_targets), version);
         update_overlay_visibility();
     }
 
@@ -963,7 +1169,7 @@ class OverlayApplication
         case WM_TIMER:
             if (word_parameter == kMetricsTimerId)
             {
-                metrics_.sample(graphics_.present_statistics());
+                metrics_.sample(renderer_.present_statistics());
             }
             else if (word_parameter == kShutdownTimerId)
             {
@@ -990,9 +1196,10 @@ class OverlayApplication
 
     void handle_fatal_error(const std::exception &error) noexcept
     {
-        OutputDebugStringA("ExternalPeepSight.Host prototype failure: ");
-        OutputDebugStringA(error.what());
-        OutputDebugStringA("\n");
+        const auto *native_error = dynamic_cast<const NativeError *>(&error);
+        log_diagnostic(DiagnosticLevel::error, "host.runtime_failure", error.what(),
+                       native_error == nullptr ? std::nullopt
+                                               : std::optional<NativeErrorStatus>(native_error->status()));
         exit_code_ = EXIT_FAILURE;
 
         if (!options_.suppress_dialogs)
@@ -1013,6 +1220,15 @@ class OverlayApplication
 
     void shutdown() noexcept
     {
+        try
+        {
+            window_thread_.assert_current("OverlayApplication::shutdown");
+        }
+        catch (const std::exception &error)
+        {
+            log_diagnostic(DiagnosticLevel::error, "host.shutdown_thread_violation", error.what());
+        }
+
         g_foreground_hook_target.store(nullptr, std::memory_order_release);
 
         if (foreground_hook_ != nullptr)
@@ -1030,8 +1246,20 @@ class OverlayApplication
             }
         }
 
+        try
+        {
+            renderer_.rebuild({}, 0U);
+        }
+        catch (const std::exception &error)
+        {
+            log_diagnostic(DiagnosticLevel::error, "render.release_failure", error.what());
+        }
         overlays_.clear();
-        graphics_.reset();
+        renderer_.stop();
+        input_thread_.request_stop();
+        ipc_thread_.request_stop();
+        input_thread_.join();
+        ipc_thread_.join();
 
         if (controller_ != nullptr)
         {
@@ -1048,10 +1276,14 @@ class OverlayApplication
             UnregisterClassW(kControllerClassName, instance_);
             controller_class_registered_ = false;
         }
-        if (com_initialized_)
+        try
         {
-            CoUninitialize();
-            com_initialized_ = false;
+            input_thread_.rethrow_if_failed();
+            ipc_thread_.rethrow_if_failed();
+        }
+        catch (const std::exception &error)
+        {
+            log_diagnostic(DiagnosticLevel::error, "host.worker_shutdown_failure", error.what());
         }
     }
 
@@ -1076,13 +1308,17 @@ class OverlayApplication
 
     HINSTANCE instance_ = nullptr;
     PrototypeOptions options_;
+    ThreadAffinity window_thread_;
     HWND controller_ = nullptr;
     HWINEVENTHOOK foreground_hook_ = nullptr;
-    GraphicsDevice graphics_;
+    AtomicHostSnapshot snapshots_;
+    HostWorkerThread input_thread_;
+    HostWorkerThread ipc_thread_;
+    RenderCoordinator renderer_;
     MetricsRecorder metrics_;
     std::vector<std::unique_ptr<OverlayWindow>> overlays_;
+    std::uint64_t next_snapshot_version_ = 1U;
     int exit_code_ = EXIT_SUCCESS;
-    bool com_initialized_ = false;
     bool controller_class_registered_ = false;
     bool overlay_class_registered_ = false;
     bool hotkey_registered_ = false;
@@ -1100,9 +1336,10 @@ int run_overlay_prototype(_In_ const HINSTANCE instance)
     }
     catch (const std::exception &error)
     {
-        OutputDebugStringA("ExternalPeepSight.Host startup failure: ");
-        OutputDebugStringA(error.what());
-        OutputDebugStringA("\n");
+        const auto *native_error = dynamic_cast<const NativeError *>(&error);
+        log_diagnostic(DiagnosticLevel::error, "host.startup_failure", error.what(),
+                       native_error == nullptr ? std::nullopt
+                                               : std::optional<NativeErrorStatus>(native_error->status()));
         if (!options.suppress_dialogs)
         {
             MessageBoxW(nullptr, L"The overlay prototype could not start. See debugger output for details.",

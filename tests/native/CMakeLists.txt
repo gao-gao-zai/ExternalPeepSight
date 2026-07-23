@@ -9,9 +9,15 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 
 add_executable(ExternalPeepSight.Native.Tests
+    host_infrastructure_tests.cpp
     prototype_contracts_tests.cpp
     smoke_test.cpp
+    ../../src/ExternalPeepSight.Host/diagnostics.cpp
+    ../../src/ExternalPeepSight.Host/host_snapshot.cpp
+    ../../src/ExternalPeepSight.Host/host_threads.cpp
+    ../../src/ExternalPeepSight.Host/monitor_descriptor.cpp
     ../../src/ExternalPeepSight.Host/prototype_contracts.cpp
+    ../../src/ExternalPeepSight.Host/render_recovery.cpp
 )
 
 target_include_directories(ExternalPeepSight.Native.Tests PRIVATE
@@ -39,6 +45,7 @@ endif()
 
 target_link_libraries(ExternalPeepSight.Native.Tests PRIVATE
     GTest::gtest_main
+    user32
 )
 
 include(GoogleTest)
@@ -69,4 +76,26 @@ add_test(
 
 set_tests_properties(ExternalPeepSight.Host.AllMonitors PROPERTIES
     TIMEOUT 10
+)
+
+add_test(
+    NAME ExternalPeepSight.Host.StaticPresentation
+    COMMAND ${CMAKE_COMMAND}
+        -DMETRICS_FILE=${CMAKE_CURRENT_BINARY_DIR}/host-smoke-metrics.csv
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/verify_host_metrics.cmake
+)
+
+set_tests_properties(ExternalPeepSight.Host.StaticPresentation PROPERTIES
+    DEPENDS ExternalPeepSight.Host.Starts
+)
+
+add_test(
+    NAME ExternalPeepSight.Host.AllMonitorsStaticPresentation
+    COMMAND ${CMAKE_COMMAND}
+        -DMETRICS_FILE=${CMAKE_CURRENT_BINARY_DIR}/host-all-monitors-metrics.csv
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/verify_host_metrics.cmake
+)
+
+set_tests_properties(ExternalPeepSight.Host.AllMonitorsStaticPresentation PROPERTIES
+    DEPENDS ExternalPeepSight.Host.AllMonitors
 )
