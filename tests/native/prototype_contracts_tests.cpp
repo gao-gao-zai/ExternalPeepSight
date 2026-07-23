@@ -1,9 +1,45 @@
 #include "prototype_contracts.h"
 
+#include <winrt/Windows.Data.Json.h>
+#include <winrt/Windows.Foundation.Collections.h>
+#include <winrt/base.h>
+
 #include <gtest/gtest.h>
+
+#include <array>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <string>
 
 namespace
 {
+using winrt::Windows::Data::Json::JsonArray;
+using winrt::Windows::Data::Json::JsonObject;
+
+[[nodiscard]] std::string read_fixture()
+{
+    std::ifstream input(std::filesystem::path(EXTERNAL_PEEPSIGHT_RENDER_GEOMETRY_FIXTURE), std::ios::binary);
+    if (!input)
+    {
+        throw std::runtime_error("Unable to open render geometry fixture.");
+    }
+    std::ostringstream buffer;
+    buffer << input.rdbuf();
+    return buffer.str();
+}
+
+[[nodiscard]] external_peepsight::PointPx parse_point(const JsonObject &object)
+{
+    return {static_cast<float>(object.GetNamedNumber(L"x")), static_cast<float>(object.GetNamedNumber(L"y"))};
+}
+
+void expect_point_near(const JsonObject &expected, const external_peepsight::PointPx actual)
+{
+    EXPECT_NEAR(expected.GetNamedNumber(L"x"), actual.x, 0.0001);
+    EXPECT_NEAR(expected.GetNamedNumber(L"y"), actual.y, 0.0001);
+}
+
 TEST(OverlayWindowContract, UsesRequiredNonActivatingTransparentStyles)
 {
     const DWORD style = external_peepsight::overlay_extended_style();
@@ -80,5 +116,67 @@ TEST(CrosshairGeometry, PreservesHalfPixelCenterForOddSurfaceDimensions)
 
     EXPECT_FLOAT_EQ(959.5F, geometry.center.x);
     EXPECT_FLOAT_EQ(539.5F, geometry.center.y);
+}
+
+TEST(CrosshairGeometry, MatchesSharedGoldenFixtures)
+{
+    winrt::init_apartment(winrt::apartment_type::multi_threaded);
+    const JsonArray cases = JsonObject::Parse(winrt::to_hstring(read_fixture())).GetNamedArray(L"cases");
+
+    for (const auto &item : cases)
+    {
+        const JsonObject fixture = item.GetObject();
+        const JsonObject surface = fixture.GetNamedObject(L"surface");
+        const JsonObject offset = fixture.GetNamedObject(L"offsetPx");
+        const JsonArray arm_values = fixture.GetNamedArray(L"arms");
+        ASSERT_EQ(4U, arm_values.Size());
+
+        std::array<external_peepsight::CrosshairArmDefinition, 4> arms{};
+        for (std::uint32_t index = 0U; index < arm_values.Size(); ++index)
+        {
+            const JsonObject arm = arm_values.GetObjectAt(index);
+            arms[index] = {
+                static_cast<float>(arm.GetNamedNumber(L"angleDeg")),
+                static_cast<float>(arm.GetNamedNumber(L"gapPx")),
+                static_cast<float>(arm.GetNamedNumber(L"lengthPx")),
+                static_cast<float>(arm.GetNamedNumber(L"widthPx")),
+                arm.GetNamedBoolean(L"visible"),
+            };
+        }
+
+        const bool anchor_at_center = fixture.GetNamedString(L"anchor") == L"screenCenter";
+        const external_peepsight::CrosshairGeometry actual = external_peepsight::calculate_crosshair_geometry(
+            static_cast<float>(surface.GetNamedNumber(L"width")), static_cast<float>(surface.GetNamedNumber(L"height")),
+            anchor_at_center, parse_point(offset), arms);
+        const JsonObject expected = fixture.GetNamedObject(L"expected");
+        const JsonArray expected_arms = expected.GetNamedArray(L"arms");
+
+        expect_point_near(expected.GetNamedObject(L"center"), actual.center);
+        for (std::uint32_t index = 0U; index < expected_arms.Size(); ++index)
+        {
+            const JsonObject expected_arm = expected_arms.GetObjectAt(index);
+            expect_point_near(expected_arm.GetNamedObject(L"start"), actual.arms[index].start);
+            expect_point_near(expected_arm.GetNamedObject(L"end"), actual.arms[index].end);
+        }
+    }
+}
+
+TEST(CrosshairGeometry, BoundsIncludeVisibleStrokesAndExcludeHiddenArms)
+{
+    const RECT monitor{-1920, 0, 0, 1080};
+    const std::array<external_peepsight::CrosshairArmDefinition, 4> arms{
+        external_peepsight::CrosshairArmDefinition{0.0F, 6.0F, 12.0F, 2.0F, true},
+        external_peepsight::CrosshairArmDefinition{90.0F, 6.0F, 200.0F, 20.0F, false},
+        external_peepsight::CrosshairArmDefinition{180.0F, 6.0F, 12.0F, 2.0F, true},
+        external_peepsight::CrosshairArmDefinition{270.0F, 6.0F, 12.0F, 2.0F, true},
+    };
+
+    const RECT bounds =
+        external_peepsight::calculate_crosshair_visual_bounds(monitor, true, {0.0F, 0.0F}, true, 2.0F, arms);
+
+    EXPECT_GT(bounds.left, monitor.left);
+    EXPECT_LT(bounds.right, monitor.right);
+    EXPECT_EQ(519, bounds.top);
+    EXPECT_EQ(561, bounds.bottom);
 }
 } // namespace

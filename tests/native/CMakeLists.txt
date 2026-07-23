@@ -14,6 +14,8 @@ add_executable(ExternalPeepSight.Native.Tests
     ipc_protocol_tests.cpp
     named_pipe_server_tests.cpp
     prototype_contracts_tests.cpp
+    render_configuration_tests.cpp
+    render_state_tests.cpp
     smoke_test.cpp
     ../../src/ExternalPeepSight.Host/current_user_security.cpp
     ../../src/ExternalPeepSight.Host/diagnostics.cpp
@@ -25,12 +27,18 @@ add_executable(ExternalPeepSight.Native.Tests
     ../../src/ExternalPeepSight.Host/monitor_descriptor.cpp
     ../../src/ExternalPeepSight.Host/named_pipe_server.cpp
     ../../src/ExternalPeepSight.Host/prototype_contracts.cpp
+    ../../src/ExternalPeepSight.Host/render_configuration.cpp
+    ../../src/ExternalPeepSight.Host/render_state.cpp
     ../../src/ExternalPeepSight.Host/render_recovery.cpp
     ../../src/ExternalPeepSight.Host/single_instance.cpp
 )
 
 target_include_directories(ExternalPeepSight.Native.Tests PRIVATE
     ../../src/ExternalPeepSight.Host
+)
+
+target_compile_definitions(ExternalPeepSight.Native.Tests PRIVATE
+    EXTERNAL_PEEPSIGHT_RENDER_GEOMETRY_FIXTURE="${CMAKE_SOURCE_DIR}/contracts/fixtures/render-geometry-v1.json"
 )
 
 if(MSVC)
@@ -60,6 +68,7 @@ target_link_libraries(ExternalPeepSight.Native.Tests PRIVATE
     user32
     windowsapp
     wtsapi32
+    xmllite
 )
 
 include(GoogleTest)

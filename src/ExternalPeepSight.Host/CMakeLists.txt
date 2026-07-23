@@ -25,6 +25,10 @@ add_executable(ExternalPeepSight.Host WIN32
     prototype_app.h
     prototype_contracts.cpp
     prototype_contracts.h
+    render_configuration.cpp
+    render_configuration.h
+    render_state.cpp
+    render_state.h
     render_recovery.cpp
     render_recovery.h
     single_instance.cpp
@@ -74,4 +78,5 @@ target_link_libraries(ExternalPeepSight.Host PRIVATE
     windowsapp
     windowscodecs
     wtsapi32
+    xmllite
 )

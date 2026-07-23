@@ -21,6 +21,7 @@ public sealed class HostClient : IAsyncDisposable
     private readonly SemaphoreSlim writeLock = new(1, 1);
     private readonly object streamLock = new();
     private readonly ConcurrentDictionary<Guid, TaskCompletionSource<JsonElement>> pending = new();
+    private readonly SnapshotApplyBatcher snapshotBatcher;
     private NamedPipeClientStream? stream;
     private Task? connectionLoop;
     private SynchronizationContext? eventContext;
@@ -33,6 +34,7 @@ public sealed class HostClient : IAsyncDisposable
         HostEndpoint.ValidateInstanceId(instanceId);
         this.instanceId = instanceId;
         this.startHostIfMissing = startHostIfMissing;
+        snapshotBatcher = new SnapshotApplyBatcher(ApplySnapshotAsync);
     }
 
     /// <summary>
@@ -80,9 +82,59 @@ public sealed class HostClient : IAsyncDisposable
             cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Queues a snapshot and sends only the newest update in each 16 ms hot-reload window.
+    /// </summary>
+    public Task QueueSnapshotAsync(
+        ulong configurationVersion,
+        JsonElement snapshot,
+        CancellationToken cancellationToken = default)
+    {
+        if (configurationVersion == 0 || configurationVersion > MaximumJsonInteger)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(configurationVersion),
+                $"Configuration version must be between 1 and {MaximumJsonInteger}.");
+        }
+
+        return snapshotBatcher.QueueAsync(configurationVersion, snapshot, cancellationToken);
+    }
+
+    /// <summary>
+    /// Shows a prioritized Host-rendered status Toast.
+    /// </summary>
+    public async Task ShowToastAsync(
+        string id,
+        string deduplicationKey,
+        string text,
+        string category,
+        int priority = 0,
+        int? durationMs = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        ArgumentException.ThrowIfNullOrWhiteSpace(deduplicationKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(text);
+        ArgumentException.ThrowIfNullOrWhiteSpace(category);
+        if (priority is < -100 or > 100)
+        {
+            throw new ArgumentOutOfRangeException(nameof(priority));
+        }
+        if (durationMs is < 100 or > 60_000)
+        {
+            throw new ArgumentOutOfRangeException(nameof(durationMs));
+        }
+
+        await SendRequestAsync(
+            "ShowToast",
+            new { id, deduplicationKey, text, category, priority, durationMs },
+            cancellationToken).ConfigureAwait(false);
+    }
+
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
+        await snapshotBatcher.DisposeAsync().ConfigureAwait(false);
         shutdown.Cancel();
         NamedPipeClientStream? current;
         lock (streamLock)

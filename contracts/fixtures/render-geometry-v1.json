@@ -1,0 +1,82 @@
+{
+  "cases": [
+    {
+      "name": "cardinal-even-surface",
+      "surface": { "width": 1920, "height": 1080 },
+      "anchor": "screenCenter",
+      "offsetPx": { "x": 0, "y": 0 },
+      "center": { "visible": true, "radiusPx": 2 },
+      "arms": [
+        { "angleDeg": 0, "gapPx": 6, "lengthPx": 12, "widthPx": 2, "visible": true },
+        { "angleDeg": 90, "gapPx": 6, "lengthPx": 12, "widthPx": 2, "visible": true },
+        { "angleDeg": 180, "gapPx": 6, "lengthPx": 12, "widthPx": 2, "visible": true },
+        { "angleDeg": 270, "gapPx": 6, "lengthPx": 12, "widthPx": 2, "visible": true }
+      ],
+      "expected": {
+        "center": { "x": 960, "y": 540 },
+        "arms": [
+          { "start": { "x": 960, "y": 534 }, "end": { "x": 960, "y": 522 } },
+          { "start": { "x": 966, "y": 540 }, "end": { "x": 978, "y": 540 } },
+          { "start": { "x": 960, "y": 546 }, "end": { "x": 960, "y": 558 } },
+          { "start": { "x": 954, "y": 540 }, "end": { "x": 942, "y": 540 } }
+        ]
+      }
+    },
+    {
+      "name": "angled-odd-surface-negative-offset",
+      "surface": { "width": 1919, "height": 1079 },
+      "anchor": "screenCenter",
+      "offsetPx": { "x": -11, "y": 7 },
+      "center": { "visible": false, "radiusPx": 0 },
+      "arms": [
+        { "angleDeg": 45, "gapPx": 5, "lengthPx": 10, "widthPx": 3, "visible": true },
+        { "angleDeg": 135, "gapPx": 2, "lengthPx": 8, "widthPx": 1, "visible": true },
+        { "angleDeg": 225, "gapPx": 4, "lengthPx": 6, "widthPx": 2, "visible": false },
+        { "angleDeg": 315, "gapPx": 0, "lengthPx": 14, "widthPx": 4, "visible": true }
+      ],
+      "expected": {
+        "center": { "x": 948.5, "y": 546.5 },
+        "arms": [
+          {
+            "start": { "x": 952.0355339059, "y": 542.9644660941 },
+            "end": { "x": 959.1066017178, "y": 535.8933982822 }
+          },
+          {
+            "start": { "x": 949.9142135624, "y": 547.9142135624 },
+            "end": { "x": 955.5710678119, "y": 553.5710678119 }
+          },
+          {
+            "start": { "x": 945.6715728753, "y": 549.3284271247 },
+            "end": { "x": 941.4289321881, "y": 553.5710678119 }
+          },
+          {
+            "start": { "x": 948.5, "y": 546.5 },
+            "end": { "x": 938.6005050634, "y": 536.6005050634 }
+          }
+        ]
+      }
+    },
+    {
+      "name": "top-left-high-dpi-physical-pixels",
+      "surface": { "width": 2560, "height": 1440 },
+      "anchor": "topLeft",
+      "offsetPx": { "x": 384, "y": 216 },
+      "center": { "visible": true, "radiusPx": 5 },
+      "arms": [
+        { "angleDeg": -90, "gapPx": 3, "lengthPx": 9, "widthPx": 2, "visible": true },
+        { "angleDeg": 30, "gapPx": 4, "lengthPx": 7, "widthPx": 2, "visible": true },
+        { "angleDeg": 210, "gapPx": 1, "lengthPx": 5, "widthPx": 2, "visible": true },
+        { "angleDeg": 450, "gapPx": 6, "lengthPx": 4, "widthPx": 2, "visible": true }
+      ],
+      "expected": {
+        "center": { "x": 384, "y": 216 },
+        "arms": [
+          { "start": { "x": 381, "y": 216 }, "end": { "x": 372, "y": 216 } },
+          { "start": { "x": 386, "y": 212.5358983849 }, "end": { "x": 389.5, "y": 206.4737205584 } },
+          { "start": { "x": 383.5, "y": 216.8660254038 }, "end": { "x": 381, "y": 221.1961524227 } },
+          { "start": { "x": 390, "y": 216 }, "end": { "x": 394, "y": 216 } }
+        ]
+      }
+    }
+  ]
+}

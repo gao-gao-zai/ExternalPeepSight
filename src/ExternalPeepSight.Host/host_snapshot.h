@@ -1,6 +1,7 @@
 #pragma once
 
 #include "monitor_descriptor.h"
+#include "render_configuration.h"
 
 #include <atomic>
 #include <cstdint>
@@ -27,6 +28,8 @@ struct HostSnapshot
     std::vector<SnapshotMonitor> monitors;
     /// Whether the overlay is visible on every monitor.
     bool all_monitors;
+    /// Validated immutable rendering configuration and encoded asset cache.
+    std::shared_ptr<const RenderConfiguration> render_configuration;
 };
 
 /// Result of attempting to publish an immutable Host snapshot.

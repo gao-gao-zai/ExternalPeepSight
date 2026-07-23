@@ -10,15 +10,19 @@
 #include "named_pipe_server.h"
 #include "process_lifecycle.h"
 #include "prototype_contracts.h"
+#include "render_configuration.h"
 #include "render_recovery.h"
+#include "render_state.h"
 #include "single_instance.h"
 #include "tray_icon.h"
 
 #include <d2d1_1.h>
+#include <d2d1_3.h>
 #include <d2d1helper.h>
 #include <d3d11.h>
 #include <dcomp.h>
 #include <dwmapi.h>
+#include <dwrite.h>
 #include <dxgi1_2.h>
 #include <psapi.h>
 #include <shellapi.h>
@@ -59,23 +63,14 @@ constexpr UINT kRebuildMonitorsMessage = WM_APP + 1U;
 constexpr UINT kForegroundChangedMessage = WM_APP + 2U;
 constexpr UINT kTrayMessage = WM_APP + 3U;
 constexpr UINT kInputStateChangedMessage = WM_APP + 4U;
+constexpr UINT kApplySnapshotMessage = WM_APP + 5U;
+constexpr UINT kShowToastMessage = WM_APP + 6U;
 constexpr UINT_PTR kMetricsTimerId = 1U;
 constexpr UINT_PTR kShutdownTimerId = 2U;
+constexpr UINT_PTR kToastTimerId = 3U;
 constexpr int kExitHotkeyId = 1;
 constexpr UINT kSmokeTestDurationMs = 1'500U;
 constexpr UINT kMetricsIntervalMs = 1'000U;
-
-constexpr std::array<std::uint8_t, 153> kPrototypePng{
-    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00,
-    0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x08, 0x08, 0x06, 0x00, 0x00, 0x00, 0xC4, 0x0F, 0xBE, 0x8B, 0x00,
-    0x00, 0x00, 0x01, 0x73, 0x52, 0x47, 0x42, 0x00, 0xAE, 0xCE, 0x1C, 0xE9, 0x00, 0x00, 0x00, 0x04, 0x67,
-    0x41, 0x4D, 0x41, 0x00, 0x00, 0xB1, 0x8F, 0x0B, 0xFC, 0x61, 0x05, 0x00, 0x00, 0x00, 0x09, 0x70, 0x48,
-    0x59, 0x73, 0x00, 0x00, 0x0E, 0xC3, 0x00, 0x00, 0x0E, 0xC3, 0x01, 0xC7, 0x6F, 0xA8, 0x64, 0x00, 0x00,
-    0x00, 0x2E, 0x49, 0x44, 0x41, 0x54, 0x28, 0x53, 0x63, 0x60, 0x38, 0xF1, 0xFF, 0x0E, 0xC3, 0x89, 0xFF,
-    0x6E, 0x38, 0xF0, 0x1D, 0x06, 0x38, 0x03, 0x9B, 0x24, 0x88, 0xC6, 0x10, 0x40, 0x67, 0x63, 0xD1, 0x85,
-    0x6A, 0x1A, 0x29, 0x0A, 0xF0, 0x5A, 0x81, 0xD7, 0x91, 0xD8, 0x24, 0xE1, 0x8A, 0x00, 0x58, 0x90, 0x8C,
-    0xA1, 0x10, 0xA4, 0xDA, 0xAE, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
-};
 
 std::atomic<HWND> g_foreground_hook_target{nullptr};
 
@@ -99,6 +94,7 @@ struct PrototypeOptions
     UINT automatic_exit_ms = 0U;
     std::filesystem::path metrics_output;
     std::filesystem::path settings_ui_path;
+    std::filesystem::path asset_root;
     std::wstring instance_id = L"default";
     bool suppress_dialogs = false;
 };
@@ -176,6 +172,15 @@ struct PrototypeOptions
                 }
                 options.settings_ui_path = std::filesystem::path(value);
             }
+            else if (argument.starts_with(L"--assets-root="))
+            {
+                const std::wstring_view value = argument.substr(std::wstring_view(L"--assets-root=").size());
+                if (value.empty())
+                {
+                    throw std::invalid_argument("Asset root path cannot be empty.");
+                }
+                options.asset_root = std::filesystem::path(value);
+            }
             else
             {
                 throw std::invalid_argument("Unknown prototype command-line argument.");
@@ -199,12 +204,30 @@ struct PresentStatistics
     double maximum_microseconds = 0.0;
 };
 
+enum class RenderContentKind
+{
+    profile,
+    toast,
+};
+
+struct RenderTargetDescriptor
+{
+    HWND window = nullptr;
+    UINT width_px = 0U;
+    UINT height_px = 0U;
+    RECT monitor_bounds_px{};
+    RECT window_bounds_px{};
+    RenderContentKind content_kind = RenderContentKind::profile;
+    std::wstring toast_text;
+};
+
 struct SurfaceResources
 {
     ComPtr<IDXGISwapChain1> swap_chain;
     ComPtr<IDCompositionTarget> composition_target;
     ComPtr<IDCompositionVisual> visual;
     ComPtr<ID2D1Bitmap1> target_bitmap;
+    RenderTargetDescriptor descriptor;
 };
 
 class GraphicsDevice
@@ -255,6 +278,7 @@ class GraphicsDevice
         throw_if_failed(d2d_factory_->CreateDevice(dxgi_device.Get(), &d2d_device_), "ID2D1Factory1::CreateDevice");
         throw_if_failed(d2d_device_->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &d2d_context_),
                         "ID2D1Device::CreateDeviceContext");
+        static_cast<void>(d2d_context_.As(&d2d_context_five_));
 
         throw_if_failed(DCompositionCreateDevice(dxgi_device.Get(), __uuidof(IDCompositionDevice),
                                                  reinterpret_cast<void **>(composition_device_.GetAddressOf())),
@@ -268,11 +292,11 @@ class GraphicsDevice
         }
         throw_if_failed(result, "Create WIC imaging factory");
 
-        throw_if_failed(d2d_context_->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Black, 0.85F), &outline_brush_),
-                        "Create outline brush");
-        throw_if_failed(d2d_context_->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White), &crosshair_brush_),
-                        "Create crosshair brush");
-        create_prototype_bitmap();
+        throw_if_failed(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+                                            reinterpret_cast<IUnknown **>(dwrite_factory_.GetAddressOf())),
+                        "DWriteCreateFactory");
+        throw_if_failed(d2d_context_->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White), &solid_brush_),
+                        "Create solid brush");
     }
 
     void reset() noexcept
@@ -282,11 +306,14 @@ class GraphicsDevice
         {
             d2d_context_->SetTarget(nullptr);
         }
-        prototype_bitmap_.Reset();
-        crosshair_brush_.Reset();
-        outline_brush_.Reset();
+        cached_svg_.Reset();
+        cached_bitmap_.Reset();
+        cached_asset_hash_.clear();
+        solid_brush_.Reset();
+        dwrite_factory_.Reset();
         wic_factory_.Reset();
         composition_device_.Reset();
+        d2d_context_five_.Reset();
         d2d_context_.Reset();
         d2d_device_.Reset();
         d2d_factory_.Reset();
@@ -295,12 +322,45 @@ class GraphicsDevice
         d3d_device_.Reset();
     }
 
-    [[nodiscard]] SurfaceResources create_surface(_In_ HWND window, const UINT width_px, const UINT height_px)
+    void prepare_configuration(const RenderConfiguration &configuration)
+    {
+        thread_affinity_.assert_current("GraphicsDevice::prepare_configuration");
+        if (configuration.mode != RenderMode::image || !configuration.image.asset)
+        {
+            cached_svg_.Reset();
+            cached_bitmap_.Reset();
+            cached_asset_hash_.clear();
+            return;
+        }
+
+        const RenderAsset &asset = *configuration.image.asset;
+        if (cached_asset_hash_ == asset.sha256 && (cached_bitmap_ || cached_svg_))
+        {
+            return;
+        }
+
+        if (asset.kind == RenderAssetKind::png)
+        {
+            ComPtr<ID2D1Bitmap1> candidate = create_png_bitmap(asset);
+            cached_svg_.Reset();
+            cached_bitmap_ = std::move(candidate);
+        }
+        else
+        {
+            ComPtr<ID2D1SvgDocument> candidate = create_svg_document(asset);
+            cached_bitmap_.Reset();
+            cached_svg_ = std::move(candidate);
+        }
+        cached_asset_hash_ = asset.sha256;
+    }
+
+    [[nodiscard]] SurfaceResources create_surface(const RenderTargetDescriptor &target,
+                                                  const RenderConfiguration &configuration)
     {
         thread_affinity_.assert_current("GraphicsDevice::create_surface");
         DXGI_SWAP_CHAIN_DESC1 description{};
-        description.Width = width_px;
-        description.Height = height_px;
+        description.Width = target.width_px;
+        description.Height = target.height_px;
         description.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
         description.Stereo = FALSE;
         description.SampleDesc.Count = 1U;
@@ -311,10 +371,11 @@ class GraphicsDevice
         description.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
 
         SurfaceResources surface;
+        surface.descriptor = target;
         throw_if_failed(
             dxgi_factory_->CreateSwapChainForComposition(d3d_device_.Get(), &description, nullptr, &surface.swap_chain),
             "IDXGIFactory2::CreateSwapChainForComposition");
-        throw_if_failed(composition_device_->CreateTargetForHwnd(window, TRUE, &surface.composition_target),
+        throw_if_failed(composition_device_->CreateTargetForHwnd(target.window, TRUE, &surface.composition_target),
                         "IDCompositionDevice::CreateTargetForHwnd");
         throw_if_failed(composition_device_->CreateVisual(&surface.visual), "IDCompositionDevice::CreateVisual");
         throw_if_failed(surface.visual->SetContent(surface.swap_chain.Get()), "IDCompositionVisual::SetContent");
@@ -322,7 +383,7 @@ class GraphicsDevice
         throw_if_failed(composition_device_->Commit(), "IDCompositionDevice::Commit");
 
         create_target_bitmap(surface);
-        render(surface, width_px, height_px);
+        render(surface, configuration);
         return surface;
     }
 
@@ -345,10 +406,16 @@ class GraphicsDevice
     }
 
   private:
-    void create_prototype_bitmap()
+    [[nodiscard]] static D2D1_COLOR_F d2d_color(const RenderColor color) noexcept
     {
-        std::vector<std::uint8_t> mutable_png(kPrototypePng.begin(), kPrototypePng.end());
+        constexpr float divisor = 255.0F;
+        return D2D1::ColorF(static_cast<float>(color.red) / divisor, static_cast<float>(color.green) / divisor,
+                            static_cast<float>(color.blue) / divisor, static_cast<float>(color.alpha) / divisor);
+    }
 
+    [[nodiscard]] ComPtr<ID2D1Bitmap1> create_png_bitmap(const RenderAsset &asset)
+    {
+        std::vector<std::uint8_t> mutable_png(asset.bytes);
         ComPtr<IWICStream> stream;
         throw_if_failed(wic_factory_->CreateStream(&stream), "IWICImagingFactory::CreateStream");
         throw_if_failed(stream->InitializeFromMemory(mutable_png.data(), static_cast<DWORD>(mutable_png.size())),
@@ -367,8 +434,47 @@ class GraphicsDevice
         throw_if_failed(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone,
                                               nullptr, 0.0, WICBitmapPaletteTypeCustom),
                         "IWICFormatConverter::Initialize");
-        throw_if_failed(d2d_context_->CreateBitmapFromWicBitmap(converter.Get(), nullptr, &prototype_bitmap_),
+        ComPtr<ID2D1Bitmap1> bitmap;
+        throw_if_failed(d2d_context_->CreateBitmapFromWicBitmap(converter.Get(), nullptr, &bitmap),
                         "ID2D1DeviceContext::CreateBitmapFromWicBitmap");
+        return bitmap;
+    }
+
+    [[nodiscard]] ComPtr<ID2D1SvgDocument> create_svg_document(const RenderAsset &asset)
+    {
+        if (!d2d_context_five_)
+        {
+            throw std::runtime_error("This Windows build does not provide Direct2D SVG support.");
+        }
+
+        HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, asset.bytes.size());
+        if (memory == nullptr)
+        {
+            throw std::bad_alloc();
+        }
+        void *destination = GlobalLock(memory);
+        if (destination == nullptr)
+        {
+            GlobalFree(memory);
+            throw std::bad_alloc();
+        }
+        std::memcpy(destination, asset.bytes.data(), asset.bytes.size());
+        GlobalUnlock(memory);
+
+        ComPtr<IStream> stream;
+        const HRESULT stream_result = CreateStreamOnHGlobal(memory, TRUE, &stream);
+        if (FAILED(stream_result))
+        {
+            GlobalFree(memory);
+            throw_if_failed(stream_result, "Create SVG stream");
+        }
+        ComPtr<ID2D1SvgDocument> document;
+        throw_if_failed(d2d_context_five_->CreateSvgDocument(
+                            stream.Get(),
+                            D2D1::SizeF(static_cast<float>(asset.width_px), static_cast<float>(asset.height_px)),
+                            &document),
+                        "ID2D1DeviceContext5::CreateSvgDocument");
+        return document;
     }
 
     void create_target_bitmap(SurfaceResources &surface)
@@ -384,7 +490,107 @@ class GraphicsDevice
             "ID2D1DeviceContext::CreateBitmapFromDxgiSurface");
     }
 
-    [[nodiscard]] HRESULT draw_surface(SurfaceResources &surface, const UINT width_px, const UINT height_px)
+    void draw_crosshair(const SurfaceResources &surface, const RenderConfiguration &configuration)
+    {
+        const float monitor_width =
+            static_cast<float>(surface.descriptor.monitor_bounds_px.right - surface.descriptor.monitor_bounds_px.left);
+        const float monitor_height =
+            static_cast<float>(surface.descriptor.monitor_bounds_px.bottom - surface.descriptor.monitor_bounds_px.top);
+        const float origin_x =
+            static_cast<float>(surface.descriptor.window_bounds_px.left - surface.descriptor.monitor_bounds_px.left);
+        const float origin_y =
+            static_cast<float>(surface.descriptor.window_bounds_px.top - surface.descriptor.monitor_bounds_px.top);
+        const RenderCrosshair &crosshair = configuration.crosshair;
+        const CrosshairGeometry geometry =
+            calculate_crosshair_geometry(monitor_width, monitor_height, crosshair.anchor == RenderAnchor::screen_center,
+                                         crosshair.offset_px, crosshair.arms);
+        for (std::size_t index = 0U; index < geometry.arms.size(); ++index)
+        {
+            if (!crosshair.arms[index].visible)
+            {
+                continue;
+            }
+            solid_brush_->SetColor(d2d_color(crosshair.arm_colors[index]));
+            const LineSegmentPx &arm = geometry.arms[index];
+            d2d_context_->DrawLine(D2D1::Point2F(arm.start.x - origin_x, arm.start.y - origin_y),
+                                   D2D1::Point2F(arm.end.x - origin_x, arm.end.y - origin_y), solid_brush_.Get(),
+                                   crosshair.arms[index].width_px);
+        }
+        if (crosshair.center_visible && crosshair.center_radius_px > 0.0F)
+        {
+            solid_brush_->SetColor(d2d_color(crosshair.center_color));
+            d2d_context_->FillEllipse(
+                D2D1::Ellipse(D2D1::Point2F(geometry.center.x - origin_x, geometry.center.y - origin_y),
+                              crosshair.center_radius_px, crosshair.center_radius_px),
+                solid_brush_.Get());
+        }
+    }
+
+    void draw_image(const SurfaceResources &surface, const RenderConfiguration &configuration)
+    {
+        if (!configuration.image.asset)
+        {
+            return;
+        }
+        constexpr float padding = 2.0F;
+        const D2D1_RECT_F destination =
+            D2D1::RectF(padding, padding, static_cast<float>(surface.descriptor.width_px) - padding,
+                        static_cast<float>(surface.descriptor.height_px) - padding);
+        if (cached_bitmap_)
+        {
+            d2d_context_->DrawBitmap(cached_bitmap_.Get(), destination, 1.0F,
+                                     D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
+            return;
+        }
+        if (cached_svg_ && d2d_context_five_)
+        {
+            const D2D1_SIZE_F viewport = cached_svg_->GetViewportSize();
+            const float scale_x = (destination.right - destination.left) / viewport.width;
+            const float scale_y = (destination.bottom - destination.top) / viewport.height;
+            const float scale = configuration.image.keep_aspect_ratio ? (std::min)(scale_x, scale_y) : scale_x;
+            d2d_context_five_->SetTransform(
+                D2D1::Matrix3x2F::Scale(scale, configuration.image.keep_aspect_ratio ? scale : scale_y) *
+                D2D1::Matrix3x2F::Translation(destination.left, destination.top));
+            d2d_context_five_->DrawSvgDocument(cached_svg_.Get());
+            d2d_context_five_->SetTransform(D2D1::Matrix3x2F::Identity());
+        }
+    }
+
+    void draw_toast(const SurfaceResources &surface, const RenderConfiguration &configuration)
+    {
+        if (surface.descriptor.toast_text.empty())
+        {
+            return;
+        }
+
+        const RenderToastConfiguration &toast = configuration.toasts;
+        solid_brush_->SetColor(d2d_color(toast.background));
+        const D2D1_ROUNDED_RECT background{
+            D2D1::RectF(0.0F, 0.0F, static_cast<float>(surface.descriptor.width_px),
+                        static_cast<float>(surface.descriptor.height_px)),
+            6.0F,
+            6.0F,
+        };
+        d2d_context_->FillRoundedRectangle(background, solid_brush_.Get());
+
+        ComPtr<IDWriteTextFormat> format;
+        throw_if_failed(dwrite_factory_->CreateTextFormat(toast.font_family.c_str(), nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+                                                          DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+                                                          toast.font_size_px, L"", &format),
+                        "IDWriteFactory::CreateTextFormat");
+        throw_if_failed(format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER), "IDWriteTextFormat::SetTextAlignment");
+        throw_if_failed(format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER),
+                        "IDWriteTextFormat::SetParagraphAlignment");
+        solid_brush_->SetColor(d2d_color(toast.foreground));
+        const D2D1_RECT_F text_bounds =
+            D2D1::RectF(12.0F, 6.0F, static_cast<float>(surface.descriptor.width_px) - 12.0F,
+                        static_cast<float>(surface.descriptor.height_px) - 6.0F);
+        d2d_context_->DrawTextW(surface.descriptor.toast_text.c_str(),
+                                static_cast<UINT32>(surface.descriptor.toast_text.size()), format.Get(), text_bounds,
+                                solid_brush_.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+    }
+
+    [[nodiscard]] HRESULT draw_surface(SurfaceResources &surface, const RenderConfiguration &configuration)
     {
         d2d_context_->SetTarget(surface.target_bitmap.Get());
         d2d_context_->SetTransform(D2D1::Matrix3x2F::Identity());
@@ -392,39 +598,32 @@ class GraphicsDevice
         d2d_context_->BeginDraw();
         d2d_context_->Clear(D2D1::ColorF(0.0F, 0.0F, 0.0F, 0.0F));
 
-        const CrosshairGeometry geometry =
-            calculate_crosshair_geometry(static_cast<float>(width_px), static_cast<float>(height_px), 7.0F, 14.0F);
-        for (const LineSegmentPx &arm : geometry.arms)
+        if (surface.descriptor.content_kind == RenderContentKind::toast)
         {
-            const D2D1_POINT_2F start = D2D1::Point2F(arm.start.x, arm.start.y);
-            const D2D1_POINT_2F end = D2D1::Point2F(arm.end.x, arm.end.y);
-            d2d_context_->DrawLine(start, end, outline_brush_.Get(), 4.0F);
-            d2d_context_->DrawLine(start, end, crosshair_brush_.Get(), 2.0F);
+            draw_toast(surface, configuration);
         }
-
-        const D2D1_ELLIPSE outline = D2D1::Ellipse(D2D1::Point2F(geometry.center.x, geometry.center.y), 3.5F, 3.5F);
-        const D2D1_ELLIPSE center = D2D1::Ellipse(D2D1::Point2F(geometry.center.x, geometry.center.y), 2.0F, 2.0F);
-        d2d_context_->FillEllipse(outline, outline_brush_.Get());
-        d2d_context_->FillEllipse(center, crosshair_brush_.Get());
-
-        const D2D1_RECT_F image_destination = D2D1::RectF(geometry.center.x + 28.0F, geometry.center.y - 12.0F,
-                                                          geometry.center.x + 52.0F, geometry.center.y + 12.0F);
-        d2d_context_->DrawBitmap(prototype_bitmap_.Get(), image_destination, 1.0F,
-                                 D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR);
+        else if (configuration.mode == RenderMode::crosshair)
+        {
+            draw_crosshair(surface, configuration);
+        }
+        else
+        {
+            draw_image(surface, configuration);
+        }
 
         const HRESULT result = d2d_context_->EndDraw();
         d2d_context_->SetTarget(nullptr);
         return result;
     }
 
-    void render(SurfaceResources &surface, const UINT width_px, const UINT height_px)
+    void render(SurfaceResources &surface, const RenderConfiguration &configuration)
     {
-        HRESULT result = draw_surface(surface, width_px, height_px);
+        HRESULT result = draw_surface(surface, configuration);
         if (result == D2DERR_RECREATE_TARGET)
         {
             surface.target_bitmap.Reset();
             create_target_bitmap(surface);
-            result = draw_surface(surface, width_px, height_px);
+            result = draw_surface(surface, configuration);
         }
         throw_if_failed(result, "ID2D1DeviceContext::EndDraw");
 
@@ -460,19 +659,15 @@ class GraphicsDevice
     ComPtr<ID2D1Factory1> d2d_factory_;
     ComPtr<ID2D1Device> d2d_device_;
     ComPtr<ID2D1DeviceContext> d2d_context_;
+    ComPtr<ID2D1DeviceContext5> d2d_context_five_;
     ComPtr<IDCompositionDevice> composition_device_;
     ComPtr<IWICImagingFactory> wic_factory_;
-    ComPtr<ID2D1SolidColorBrush> outline_brush_;
-    ComPtr<ID2D1SolidColorBrush> crosshair_brush_;
-    ComPtr<ID2D1Bitmap1> prototype_bitmap_;
+    ComPtr<IDWriteFactory> dwrite_factory_;
+    ComPtr<ID2D1SolidColorBrush> solid_brush_;
+    ComPtr<ID2D1Bitmap1> cached_bitmap_;
+    ComPtr<ID2D1SvgDocument> cached_svg_;
+    std::string cached_asset_hash_;
     PresentStatistics present_statistics_;
-};
-
-struct RenderTargetDescriptor
-{
-    HWND window = nullptr;
-    UINT width_px = 0U;
-    UINT height_px = 0U;
 };
 
 class RenderCoordinator
@@ -522,11 +717,36 @@ class RenderCoordinator
         std::unique_lock lock(mutex_);
         rethrow_failure_locked();
         requested_targets_ = std::move(targets);
+        requested_configuration_.reset();
         requested_snapshot_version_ = expected_snapshot_version;
+        requested_prepare_only_ = false;
         const std::uint64_t generation = ++requested_generation_;
         state_changed_.notify_all();
         state_changed_.wait(lock, [this, generation] { return completed_generation_ >= generation || failure_; });
         rethrow_failure_locked();
+        rethrow_request_failure_locked(generation);
+    }
+
+    void prepare_configuration(std::shared_ptr<const RenderConfiguration> configuration)
+    {
+        if (!configuration)
+        {
+            throw std::invalid_argument("Render configuration is required.");
+        }
+        if (!started_)
+        {
+            throw std::logic_error("Render coordinator has not been started.");
+        }
+
+        std::unique_lock lock(mutex_);
+        rethrow_failure_locked();
+        requested_configuration_ = std::move(configuration);
+        requested_prepare_only_ = true;
+        const std::uint64_t generation = ++requested_generation_;
+        state_changed_.notify_all();
+        state_changed_.wait(lock, [this, generation] { return completed_generation_ >= generation || failure_; });
+        rethrow_failure_locked();
+        rethrow_request_failure_locked(generation);
     }
 
     [[nodiscard]] PresentStatistics present_statistics() const
@@ -571,8 +791,10 @@ class RenderCoordinator
             while (!stop_token.stop_requested())
             {
                 std::vector<RenderTargetDescriptor> targets;
+                std::shared_ptr<const RenderConfiguration> requested_configuration;
                 std::uint64_t snapshot_version = 0U;
                 std::uint64_t generation = 0U;
+                bool prepare_only = false;
                 {
                     std::unique_lock lock(mutex_);
                     state_changed_.wait(lock, stop_token,
@@ -582,24 +804,44 @@ class RenderCoordinator
                         break;
                     }
                     targets = requested_targets_;
+                    requested_configuration = requested_configuration_;
                     snapshot_version = requested_snapshot_version_;
                     generation = requested_generation_;
+                    prepare_only = requested_prepare_only_;
                 }
 
-                if (snapshot_version != 0U)
+                std::exception_ptr request_failure;
+                if (prepare_only)
+                {
+                    try
+                    {
+                        graphics.prepare_configuration(*requested_configuration);
+                    }
+                    catch (...)
+                    {
+                        request_failure = std::current_exception();
+                    }
+                }
+                else if (snapshot_version != 0U)
                 {
                     const auto snapshot = snapshots_.load();
                     if (!snapshot || snapshot->version != snapshot_version)
                     {
                         throw std::logic_error("Render request does not match the published Host snapshot.");
                     }
+                    graphics.prepare_configuration(*snapshot->render_configuration);
+                    rebuild_targets(graphics, surfaces, recovery, targets, *snapshot->render_configuration);
                 }
-
-                rebuild_targets(graphics, surfaces, recovery, targets);
+                else
+                {
+                    release_surfaces(graphics, surfaces);
+                }
 
                 {
                     std::scoped_lock lock(mutex_);
                     present_statistics_ = graphics.present_statistics();
+                    completed_request_failure_ = request_failure;
+                    completed_request_failure_generation_ = generation;
                     completed_generation_ = generation;
                 }
                 state_changed_.notify_all();
@@ -641,23 +883,25 @@ class RenderCoordinator
     }
 
     static void create_surfaces(GraphicsDevice &graphics, std::vector<SurfaceResources> &surfaces,
-                                const std::vector<RenderTargetDescriptor> &targets)
+                                const std::vector<RenderTargetDescriptor> &targets,
+                                const RenderConfiguration &configuration)
     {
         surfaces.reserve(targets.size());
         for (const RenderTargetDescriptor &target : targets)
         {
-            surfaces.push_back(graphics.create_surface(target.window, target.width_px, target.height_px));
+            surfaces.push_back(graphics.create_surface(target, configuration));
         }
     }
 
     static void rebuild_targets(GraphicsDevice &graphics, std::vector<SurfaceResources> &surfaces,
                                 DeviceRecoveryStateMachine &recovery,
-                                const std::vector<RenderTargetDescriptor> &targets)
+                                const std::vector<RenderTargetDescriptor> &targets,
+                                const RenderConfiguration &configuration)
     {
         release_surfaces(graphics, surfaces);
         try
         {
-            create_surfaces(graphics, surfaces, targets);
+            create_surfaces(graphics, surfaces, targets, configuration);
         }
         catch (const NativeError &error)
         {
@@ -674,7 +918,8 @@ class RenderCoordinator
             try
             {
                 graphics.initialize();
-                create_surfaces(graphics, surfaces, targets);
+                graphics.prepare_configuration(configuration);
+                create_surfaces(graphics, surfaces, targets, configuration);
                 recovery.mark_recreated();
                 log_diagnostic(DiagnosticLevel::information, "render.device_recovered",
                                "Render resources were recreated in dependency order.");
@@ -695,26 +940,39 @@ class RenderCoordinator
         }
     }
 
+    void rethrow_request_failure_locked(const std::uint64_t generation) const
+    {
+        if (completed_request_failure_ && completed_request_failure_generation_ == generation)
+        {
+            std::rethrow_exception(completed_request_failure_);
+        }
+    }
+
     AtomicHostSnapshot &snapshots_;
     HostWorkerThread worker_;
     mutable std::mutex mutex_;
     std::condition_variable_any state_changed_;
     std::vector<RenderTargetDescriptor> requested_targets_;
+    std::shared_ptr<const RenderConfiguration> requested_configuration_;
     PresentStatistics present_statistics_;
     std::exception_ptr failure_;
+    std::exception_ptr completed_request_failure_;
     std::uint64_t requested_snapshot_version_ = 0U;
     std::uint64_t requested_generation_ = 0U;
     std::uint64_t completed_generation_ = 0U;
+    std::uint64_t completed_request_failure_generation_ = 0U;
     bool ready_ = false;
     bool started_ = false;
+    bool requested_prepare_only_ = false;
 };
 
 class OverlayWindow
 {
   public:
-    OverlayWindow(_In_ HINSTANCE instance, _In_ HWND controller, const MonitorDescriptor &monitor)
-        : controller_(controller), monitor_(monitor),
-          window_bounds_px_(calculate_prototype_overlay_bounds(monitor.bounds_px))
+    OverlayWindow(_In_ HINSTANCE instance, _In_ HWND controller, const MonitorDescriptor &monitor,
+                  const RECT window_bounds_px, const RenderContentKind content_kind, std::wstring toast_text = {})
+        : controller_(controller), monitor_(monitor), window_bounds_px_(window_bounds_px), content_kind_(content_kind),
+          toast_text_(std::move(toast_text))
     {
         const int width = window_bounds_px_.right - window_bounds_px_.left;
         const int height = window_bounds_px_.bottom - window_bounds_px_.top;
@@ -763,10 +1021,20 @@ class OverlayWindow
         return monitor_.handle;
     }
 
+    [[nodiscard]] RenderContentKind content_kind() const noexcept
+    {
+        return content_kind_;
+    }
+
     [[nodiscard]] RenderTargetDescriptor render_target() const noexcept
     {
-        return {window_, static_cast<UINT>(window_bounds_px_.right - window_bounds_px_.left),
-                static_cast<UINT>(window_bounds_px_.bottom - window_bounds_px_.top)};
+        return {window_,
+                static_cast<UINT>(window_bounds_px_.right - window_bounds_px_.left),
+                static_cast<UINT>(window_bounds_px_.bottom - window_bounds_px_.top),
+                monitor_.bounds_px,
+                window_bounds_px_,
+                content_kind_,
+                toast_text_};
     }
 
     void set_visible(const bool visible)
@@ -852,6 +1120,8 @@ class OverlayWindow
     MonitorDescriptor monitor_;
     RECT window_bounds_px_{};
     HWND window_ = nullptr;
+    RenderContentKind content_kind_ = RenderContentKind::profile;
+    std::wstring toast_text_;
     bool visible_ = false;
 };
 
@@ -958,6 +1228,55 @@ class MetricsRecorder
     DWORD processor_count_ = 1U;
 };
 
+struct ApplySnapshotRequest
+{
+    InputConfiguration input;
+    std::shared_ptr<const RenderConfiguration> render;
+    std::exception_ptr failure;
+};
+
+struct ShowToastRequest
+{
+    ToastMessage message;
+    std::exception_ptr failure;
+};
+
+[[nodiscard]] RECT calculate_toast_bounds(const RECT &monitor_bounds_px, const RenderToastConfiguration &configuration,
+                                          const std::wstring_view text) noexcept
+{
+    constexpr LONG margin_px = 24L;
+    const LONG monitor_width = monitor_bounds_px.right - monitor_bounds_px.left;
+    const LONG monitor_height = monitor_bounds_px.bottom - monitor_bounds_px.top;
+    const LONG estimated_width =
+        static_cast<LONG>(std::ceil(static_cast<double>(text.size()) * configuration.font_size_px * 0.65 + 32.0));
+    const LONG width = (std::clamp)(estimated_width, 120L, (std::min)(480L, monitor_width));
+    const LONG height =
+        (std::clamp)(static_cast<LONG>(std::ceil(configuration.font_size_px * 2.5)), 40L, monitor_height);
+
+    LONG left = monitor_bounds_px.left + margin_px;
+    if (configuration.position == RenderToastPosition::top_center ||
+        configuration.position == RenderToastPosition::bottom_center)
+    {
+        left = monitor_bounds_px.left + (monitor_width - width) / 2L;
+    }
+    else if (configuration.position == RenderToastPosition::top_right ||
+             configuration.position == RenderToastPosition::bottom_right)
+    {
+        left = monitor_bounds_px.right - margin_px - width;
+    }
+
+    LONG top = monitor_bounds_px.top + margin_px;
+    if (configuration.position == RenderToastPosition::bottom_left ||
+        configuration.position == RenderToastPosition::bottom_center ||
+        configuration.position == RenderToastPosition::bottom_right)
+    {
+        top = monitor_bounds_px.bottom - margin_px - height;
+    }
+    left = (std::clamp)(left, monitor_bounds_px.left, monitor_bounds_px.right - width);
+    top = (std::clamp)(top, monitor_bounds_px.top, monitor_bounds_px.bottom - height);
+    return {left, top, left + width, top + height};
+}
+
 class OverlayApplication
 {
   public:
@@ -977,20 +1296,78 @@ class OverlayApplication
           ipc_host_state_(
               [this](const std::string_view snapshot_json)
               {
-                  InputConfiguration configuration;
+                  ApplySnapshotRequest request;
                   try
                   {
-                      configuration = parse_input_configuration(snapshot_json);
+                      request.input = parse_input_configuration(snapshot_json);
+                      request.render = std::make_shared<const RenderConfiguration>(
+                          parse_render_configuration(snapshot_json, options_.asset_root));
                   }
                   catch (const std::exception &error)
                   {
-                      throw IpcClientError(L"InvalidInputConfiguration", winrt::to_hstring(error.what()).c_str());
+                      throw IpcClientError(L"InvalidConfiguration", winrt::to_hstring(error.what()).c_str());
                   }
 
-                  const InputApplyResult result = input_service_.apply_configuration(configuration);
-                  if (!result.applied)
+                  const HWND target = configuration_target_.load(std::memory_order_acquire);
+                  if (target == nullptr)
                   {
-                      throw IpcClientError(L"InputRegistrationFailed", winrt::to_hstring(result.message).c_str());
+                      throw IpcClientError(L"HostNotReady", L"The Host window is not ready to apply configuration.");
+                  }
+                  DWORD_PTR ignored = 0U;
+                  if (!SendMessageTimeoutW(target, kApplySnapshotMessage, 0U, reinterpret_cast<LPARAM>(&request),
+                                           SMTO_ABORTIFHUNG | SMTO_BLOCK, 10'000U, &ignored))
+                  {
+                      throw IpcClientError(L"ApplyTimeout", L"The Host did not apply configuration before timeout.");
+                  }
+                  if (request.failure)
+                  {
+                      try
+                      {
+                          std::rethrow_exception(request.failure);
+                      }
+                      catch (const IpcClientError &)
+                      {
+                          throw;
+                      }
+                      catch (const std::exception &error)
+                      {
+                          throw IpcClientError(L"RenderConfigurationFailed", winrt::to_hstring(error.what()).c_str());
+                      }
+                  }
+              },
+              [this](const std::string_view payload_json)
+              {
+                  ShowToastRequest request;
+                  try
+                  {
+                      request.message = parse_toast_message(payload_json);
+                  }
+                  catch (const std::exception &error)
+                  {
+                      throw IpcClientError(L"InvalidToast", winrt::to_hstring(error.what()).c_str());
+                  }
+
+                  const HWND target = configuration_target_.load(std::memory_order_acquire);
+                  if (target == nullptr)
+                  {
+                      throw IpcClientError(L"HostNotReady", L"The Host window is not ready to show a Toast.");
+                  }
+                  DWORD_PTR ignored = 0U;
+                  if (!SendMessageTimeoutW(target, kShowToastMessage, 0U, reinterpret_cast<LPARAM>(&request),
+                                           SMTO_ABORTIFHUNG | SMTO_BLOCK, 10'000U, &ignored))
+                  {
+                      throw IpcClientError(L"ToastTimeout", L"The Host did not show the Toast before timeout.");
+                  }
+                  if (request.failure)
+                  {
+                      try
+                      {
+                          std::rethrow_exception(request.failure);
+                      }
+                      catch (const std::exception &error)
+                      {
+                          throw IpcClientError(L"ToastRenderFailed", winrt::to_hstring(error.what()).c_str());
+                      }
                   }
               }),
           ipc_server_(ipc_endpoint, ipc_host_state_),
@@ -1082,6 +1459,7 @@ class OverlayApplication
 
         g_foreground_hook_target.store(controller_, std::memory_order_release);
         input_notification_target_.store(controller_, std::memory_order_release);
+        configuration_target_.store(controller_, std::memory_order_release);
         taskbar_created_message_ = RegisterWindowMessageW(L"TaskbarCreated");
         if (!options_.suppress_dialogs)
         {
@@ -1143,6 +1521,9 @@ class OverlayApplication
     void rebuild_overlays()
     {
         window_thread_.assert_current("OverlayApplication::rebuild_overlays");
+        const HMONITOR toast_monitor = active_monitor();
+        // Asset decoding is completed before publishing a new immutable Host snapshot.
+        renderer_.prepare_configuration(render_configuration_);
         renderer_.rebuild({}, 0U);
         overlays_.clear();
 
@@ -1156,7 +1537,8 @@ class OverlayApplication
 
         const std::uint64_t version = next_snapshot_version_++;
         const auto snapshot = std::make_shared<const HostSnapshot>(
-            HostSnapshot{version, std::move(snapshot_monitors), options_.display_mode == DisplayMode::all_monitors});
+            HostSnapshot{version, std::move(snapshot_monitors), options_.display_mode == DisplayMode::all_monitors,
+                         render_configuration_});
         if (snapshots_.publish(snapshot) != SnapshotPublishResult::published)
         {
             throw std::logic_error("A new Host snapshot could not be published.");
@@ -1166,9 +1548,21 @@ class OverlayApplication
         render_targets.reserve(monitors.size());
         for (const MonitorDescriptor &monitor : monitors)
         {
-            auto overlay = std::make_unique<OverlayWindow>(instance_, controller_, monitor);
+            auto overlay = std::make_unique<OverlayWindow>(
+                instance_, controller_, monitor,
+                calculate_render_visual_bounds(monitor.bounds_px, *render_configuration_), RenderContentKind::profile);
             render_targets.push_back(overlay->render_target());
             overlays_.push_back(std::move(overlay));
+            if (render_configuration_->toasts.enabled && toast_queue_.active() && monitor.handle == toast_monitor)
+            {
+                auto toast = std::make_unique<OverlayWindow>(
+                    instance_, controller_, monitor,
+                    calculate_toast_bounds(monitor.work_area_px, render_configuration_->toasts,
+                                           toast_queue_.active()->message.text),
+                    RenderContentKind::toast, toast_queue_.active()->message.text);
+                render_targets.push_back(toast->render_target());
+                overlays_.push_back(std::move(toast));
+            }
         }
         renderer_.rebuild(std::move(render_targets), version);
         update_overlay_visibility();
@@ -1208,7 +1602,10 @@ class OverlayApplication
             const bool monitor_selected =
                 options_.display_mode == DisplayMode::all_monitors || overlay->monitor_handle() == selected_monitor;
             const bool input_visible = !switch_visibility_configured_ || switch_visibility_;
-            overlay->set_visible(monitor_selected && input_visible);
+            const bool visible = overlay->content_kind() == RenderContentKind::toast
+                                     ? monitor_selected
+                                     : monitor_selected && input_visible;
+            overlay->set_visible(visible);
         }
     }
 
@@ -1218,6 +1615,85 @@ class OverlayApplication
         for (const std::unique_ptr<OverlayWindow> &overlay : overlays_)
         {
             overlay->reassert_topmost();
+        }
+    }
+
+    void apply_snapshot(ApplySnapshotRequest &request)
+    {
+        window_thread_.assert_current("OverlayApplication::apply_snapshot");
+        if (!request.render)
+        {
+            throw std::invalid_argument("Render snapshot is required.");
+        }
+
+        const InputApplyResult input_result = input_service_.apply_configuration(request.input);
+        if (!input_result.applied)
+        {
+            throw IpcClientError(L"InputRegistrationFailed", winrt::to_hstring(input_result.message).c_str());
+        }
+
+        const std::shared_ptr<const RenderConfiguration> previous_render = render_configuration_;
+        const std::optional<InputConfiguration> previous_input = input_configuration_;
+        render_configuration_ = request.render;
+        input_configuration_ = request.input;
+        try
+        {
+            rebuild_overlays();
+        }
+        catch (...)
+        {
+            render_configuration_ = previous_render;
+            input_configuration_ = previous_input;
+            if (previous_input)
+            {
+                const InputApplyResult rollback = input_service_.apply_configuration(*previous_input);
+                if (!rollback.applied)
+                {
+                    log_diagnostic(DiagnosticLevel::error, "render.input_rollback_failed", rollback.message,
+                                   NativeErrorStatus{NativeErrorDomain::win32, rollback.win32_error});
+                }
+            }
+            throw;
+        }
+    }
+
+    void show_toast(ShowToastRequest &request)
+    {
+        window_thread_.assert_current("OverlayApplication::show_toast");
+        if (!render_configuration_->toasts.enabled)
+        {
+            return;
+        }
+        const std::uint64_t now_ms = GetTickCount64();
+        static_cast<void>(
+            toast_queue_.push(std::move(request.message), now_ms, render_configuration_->toasts.duration_ms));
+        schedule_toast_timer(now_ms);
+        rebuild_overlays();
+    }
+
+    void advance_toasts()
+    {
+        window_thread_.assert_current("OverlayApplication::advance_toasts");
+        const std::uint64_t now_ms = GetTickCount64();
+        static_cast<void>(toast_queue_.advance(now_ms, render_configuration_->toasts.duration_ms));
+        schedule_toast_timer(now_ms);
+        rebuild_overlays();
+    }
+
+    void schedule_toast_timer(const std::uint64_t now_ms)
+    {
+        KillTimer(controller_, kToastTimerId);
+        if (!toast_queue_.active())
+        {
+            return;
+        }
+        const std::uint64_t remaining =
+            toast_queue_.active()->expires_at_ms > now_ms ? toast_queue_.active()->expires_at_ms - now_ms : 1U;
+        const UINT interval =
+            static_cast<UINT>((std::min)(remaining, static_cast<std::uint64_t>((std::numeric_limits<UINT>::max)())));
+        if (SetTimer(controller_, kToastTimerId, (std::max)(interval, 1U), nullptr) == 0U)
+        {
+            throw_last_error("Set Toast timer");
         }
     }
 
@@ -1232,6 +1708,32 @@ class OverlayApplication
 
         switch (message)
         {
+        case kApplySnapshotMessage:
+        {
+            auto *request = reinterpret_cast<ApplySnapshotRequest *>(long_parameter);
+            try
+            {
+                apply_snapshot(*request);
+            }
+            catch (...)
+            {
+                request->failure = std::current_exception();
+            }
+            return 1;
+        }
+        case kShowToastMessage:
+        {
+            auto *request = reinterpret_cast<ShowToastRequest *>(long_parameter);
+            try
+            {
+                show_toast(*request);
+            }
+            catch (...)
+            {
+                request->failure = std::current_exception();
+            }
+            return 1;
+        }
         case kRebuildMonitorsMessage:
         case WM_DISPLAYCHANGE:
         case WM_DEVICECHANGE:
@@ -1275,6 +1777,10 @@ class OverlayApplication
             {
                 DestroyWindow(window);
             }
+            else if (word_parameter == kToastTimerId)
+            {
+                advance_toasts();
+            }
             return 0;
         case WM_HOTKEY:
             if (word_parameter == kExitHotkeyId)
@@ -1287,6 +1793,7 @@ class OverlayApplication
             return 0;
         case WM_DESTROY:
             tray_icon_.reset();
+            configuration_target_.store(nullptr, std::memory_order_release);
             controller_ = nullptr;
             PostQuitMessage(exit_code_);
             return 0;
@@ -1332,6 +1839,7 @@ class OverlayApplication
 
         g_foreground_hook_target.store(nullptr, std::memory_order_release);
         input_notification_target_.store(nullptr, std::memory_order_release);
+        configuration_target_.store(nullptr, std::memory_order_release);
         tray_icon_.reset();
 
         if (foreground_hook_ != nullptr)
@@ -1343,6 +1851,7 @@ class OverlayApplication
         {
             KillTimer(controller_, kMetricsTimerId);
             KillTimer(controller_, kShutdownTimerId);
+            KillTimer(controller_, kToastTimerId);
             if (hotkey_registered_)
             {
                 UnregisterHotKey(controller_, kExitHotkeyId);
@@ -1414,6 +1923,7 @@ class OverlayApplication
     HWINEVENTHOOK foreground_hook_ = nullptr;
     AtomicHostSnapshot snapshots_;
     std::atomic<HWND> input_notification_target_ = nullptr;
+    std::atomic<HWND> configuration_target_ = nullptr;
     GlobalInputService input_service_;
     IpcHostState ipc_host_state_;
     NamedPipeServer ipc_server_;
@@ -1422,6 +1932,10 @@ class OverlayApplication
     MetricsRecorder metrics_;
     TrayIcon tray_icon_;
     std::vector<std::unique_ptr<OverlayWindow>> overlays_;
+    std::shared_ptr<const RenderConfiguration> render_configuration_ =
+        std::make_shared<const RenderConfiguration>(make_default_render_configuration());
+    std::optional<InputConfiguration> input_configuration_;
+    ToastQueue toast_queue_;
     std::uint64_t next_snapshot_version_ = 1U;
     UINT taskbar_created_message_ = 0U;
     int exit_code_ = EXIT_SUCCESS;

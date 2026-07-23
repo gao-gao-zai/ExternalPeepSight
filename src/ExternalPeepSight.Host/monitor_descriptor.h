@@ -25,6 +25,8 @@ struct MonitorDescriptor
     HMONITOR handle;
     /// Virtual-desktop bounds in physical pixels.
     RECT bounds_px;
+    /// Taskbar-excluding work area used only for edge-aligned auxiliary content.
+    RECT work_area_px;
     /// GDI display source name.
     std::wstring device_name;
     /// DisplayConfig target path when available.

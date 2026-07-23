@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <windows.h>
 
 namespace external_peepsight
@@ -21,6 +22,21 @@ struct LineSegmentPx
     PointPx start;
     /// Segment end point.
     PointPx end;
+};
+
+/// Defines one independently configurable crosshair arm.
+struct CrosshairArmDefinition
+{
+    /// Clockwise angle where zero degrees points upward.
+    float angle_deg;
+    /// Distance from the center to the segment start in physical pixels.
+    float gap_px;
+    /// Segment length in physical pixels.
+    float length_px;
+    /// Stroke width in physical pixels.
+    float width_px;
+    /// Whether the arm contributes to rendering and visual bounds.
+    bool visible;
 };
 
 /// Geometry for the center point and four crosshair arms.
@@ -63,4 +79,20 @@ struct CrosshairGeometry
 /// measured from the center towards each cardinal direction.
 [[nodiscard]] CrosshairGeometry calculate_crosshair_geometry(float width_px, float height_px, float gap_px,
                                                              float arm_length_px) noexcept;
+
+/// Calculates independently configured crosshair geometry in physical pixels.
+///
+/// Angles increase clockwise from the upward axis. Offset values and the
+/// returned coordinates use surface-local physical pixels.
+[[nodiscard]] CrosshairGeometry calculate_crosshair_geometry(
+    float width_px, float height_px, bool anchor_at_center, PointPx offset_px,
+    const std::array<CrosshairArmDefinition, 4> &arms) noexcept;
+
+/// Calculates a clipped virtual-desktop HWND bounds for visible crosshair content.
+///
+/// The monitor rectangle and returned bounds use virtual-desktop physical pixels.
+/// Anti-aliasing padding is included so a tightly bounded window does not clip strokes.
+[[nodiscard]] RECT calculate_crosshair_visual_bounds(const RECT &monitor_bounds_px, bool anchor_at_center,
+                                                     PointPx offset_px, bool center_visible, float center_radius_px,
+                                                     const std::array<CrosshairArmDefinition, 4> &arms) noexcept;
 } // namespace external_peepsight

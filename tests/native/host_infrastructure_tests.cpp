@@ -27,8 +27,13 @@ using namespace std::chrono_literals;
         monitors.push_back(
             {{L"monitor-" + std::to_wstring(index)}, {index * 100, 0, index * 100 + 100, static_cast<LONG>(version)}});
     }
-    return std::make_shared<const external_peepsight::HostSnapshot>(
-        external_peepsight::HostSnapshot{version, std::move(monitors), version % 2U == 0U});
+    return std::make_shared<const external_peepsight::HostSnapshot>(external_peepsight::HostSnapshot{
+        version,
+        std::move(monitors),
+        version % 2U == 0U,
+        std::make_shared<const external_peepsight::RenderConfiguration>(
+            external_peepsight::make_default_render_configuration()),
+    });
 }
 
 TEST(AtomicHostSnapshot, RejectsInvalidAndStaleVersions)

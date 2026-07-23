@@ -22,4 +22,10 @@
     <ProjectReference Include="..\..\src\ExternalPeepSight.Core\ExternalPeepSight.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="..\..\contracts\fixtures\render-geometry-v1.json"
+          Link="render-geometry-v1.json"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

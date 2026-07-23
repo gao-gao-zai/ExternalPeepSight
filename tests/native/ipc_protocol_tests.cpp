@@ -222,4 +222,39 @@ TEST(IpcSession, ReturnsStableClientErrorFromSnapshotValidator)
               result.response_json.find("\"message\":\"The configured hotkey is already registered.\""));
     EXPECT_EQ(0U, state.snapshot().configuration_version);
 }
+
+TEST(IpcSession, DispatchesAuthenticatedShowToastAndAcknowledgesIdentifier)
+{
+    initialize_winrt();
+    std::string received;
+    external_peepsight::IpcHostState state({}, [&received](const std::string_view payload) { received = payload; });
+    external_peepsight::IpcSession session(state, std::string(kToken));
+    static_cast<void>(session.handle_message(
+        envelope("11112222-3333-4444-5555-666677778888", "Hello", "{\"token\":\"" + std::string(kToken) + "\"}")));
+
+    const auto result = session.handle_message(envelope(
+        "99990000-aaaa-bbbb-cccc-ddddeeeeffff", "ShowToast",
+        R"({"id":"toast-1","deduplicationKey":"switch-a","text":"Enabled","category":"switch","priority":0})"));
+
+    EXPECT_FALSE(result.disconnect);
+    EXPECT_NE(std::string::npos, result.response_json.find("\"command\":\"ShowToast\""));
+    EXPECT_NE(std::string::npos, result.response_json.find("\"id\":\"toast-1\""));
+    EXPECT_NE(std::string::npos, received.find("\"deduplicationKey\":\"switch-a\""));
+    EXPECT_EQ(0U, state.snapshot().configuration_version);
+}
+
+TEST(IpcSession, RejectsShowToastWhenHandlerIsUnavailable)
+{
+    initialize_winrt();
+    external_peepsight::IpcHostState state;
+    external_peepsight::IpcSession session(state, std::string(kToken));
+    static_cast<void>(session.handle_message(
+        envelope("aaaabbbb-cccc-dddd-eeee-ffff00001111", "Hello", "{\"token\":\"" + std::string(kToken) + "\"}")));
+
+    const auto result = session.handle_message(
+        envelope("22223333-4444-5555-6666-777788889999", "ShowToast",
+                 R"({"id":"toast-2","deduplicationKey":"profile","text":"Profile","category":"profile"})"));
+
+    EXPECT_NE(std::string::npos, result.response_json.find("\"code\":\"CommandNotAvailable\""));
+}
 } // namespace

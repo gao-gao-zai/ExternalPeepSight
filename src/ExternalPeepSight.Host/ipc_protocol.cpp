@@ -340,6 +340,18 @@ void require_allowed_properties(const JsonObject &object, const std::initializer
     return make_ack(envelope.request_id, ack);
 }
 
+[[nodiscard]] IpcSessionResult handle_show_toast(const ParsedEnvelope &envelope, IpcHostState &host_state)
+{
+    const JsonObject payload = require_payload_object(envelope.payload);
+    require_allowed_properties(payload, {L"id", L"deduplicationKey", L"text", L"category", L"priority", L"durationMs"});
+    host_state.show_toast(winrt::to_string(payload.Stringify()));
+
+    JsonObject ack;
+    ack.SetNamedValue(L"command", JsonValue::CreateStringValue(L"ShowToast"));
+    ack.SetNamedValue(L"id", JsonValue::CreateStringValue(payload.GetNamedString(L"id")));
+    return make_ack(envelope.request_id, ack);
+}
+
 [[nodiscard]] IpcSessionResult handle_authenticated_message(const ParsedEnvelope &envelope, IpcHostState &host_state)
 {
     switch (envelope.type)
@@ -348,13 +360,14 @@ void require_allowed_properties(const JsonObject &object, const std::initializer
         return handle_get_state(envelope, host_state.snapshot());
     case MessageType::apply_snapshot:
         return handle_apply_snapshot(envelope, host_state);
+    case MessageType::show_toast:
+        return handle_show_toast(envelope, host_state);
     case MessageType::hello:
         return make_error(envelope.request_id, L"AlreadyAuthenticated", L"The Hello handshake has already completed.",
                           false);
     case MessageType::set_active_profile:
     case MessageType::set_switch_state:
     case MessageType::set_monitor_selection:
-    case MessageType::show_toast:
         return make_error(envelope.request_id, L"CommandNotAvailable",
                           L"The command is recognized but is not available in this Host phase.", false);
     case MessageType::ack:
@@ -408,12 +421,24 @@ const std::wstring &IpcClientError::wide_message() const noexcept
     return message_;
 }
 
-IpcHostState::IpcHostState(SnapshotValidator validator) : validator_(std::move(validator)) {}
+IpcHostState::IpcHostState(SnapshotValidator validator, ToastHandler toast_handler)
+    : validator_(std::move(validator)), toast_handler_(std::move(toast_handler))
+{
+}
 
 IpcHostStateSnapshot IpcHostState::snapshot() const
 {
     std::scoped_lock lock(mutex_);
     return {configuration_version_, snapshot_json_};
+}
+
+void IpcHostState::show_toast(std::string payload_json) const
+{
+    if (!toast_handler_)
+    {
+        throw IpcClientError(L"CommandNotAvailable", L"ShowToast is not available in this Host instance.");
+    }
+    toast_handler_(payload_json);
 }
 
 IpcSession::IpcSession(IpcHostState &host_state, std::string handshake_token)

@@ -157,6 +157,48 @@
           ]
         }
       }
+    },
+    "showToastPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "deduplicationKey",
+        "text",
+        "category"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "deduplicationKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": -100,
+          "maximum": 100
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 60000
+        }
+      }
     }
   },
   "type": "object",
@@ -198,6 +240,22 @@
     }
   },
   "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "ShowToast"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/showToastPayload"
+          }
+        }
+      }
+    },
     {
       "if": {
         "properties": {

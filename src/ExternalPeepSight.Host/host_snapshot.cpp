@@ -8,7 +8,7 @@ namespace
 {
 [[nodiscard]] bool is_valid(const HostSnapshot &snapshot)
 {
-    if (snapshot.version == 0U || snapshot.monitors.empty())
+    if (snapshot.version == 0U || snapshot.monitors.empty() || !snapshot.render_configuration)
     {
         return false;
     }

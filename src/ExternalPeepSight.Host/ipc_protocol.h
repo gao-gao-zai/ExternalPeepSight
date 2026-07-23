@@ -63,9 +63,11 @@ class IpcHostState
   public:
     /// Validation and application performed before a newer snapshot is committed.
     using SnapshotValidator = std::function<void(std::string_view)>;
+    /// Authenticated ShowToast command handler.
+    using ToastHandler = std::function<void(std::string_view)>;
 
     /// Creates Host state with optional snapshot validation and side effects.
-    explicit IpcHostState(SnapshotValidator validator = {});
+    explicit IpcHostState(SnapshotValidator validator = {}, ToastHandler toast_handler = {});
 
     /// Applies a configuration only when its version is newer or exactly idempotent.
     [[nodiscard]] IpcApplyResult apply(std::uint64_t configuration_version, std::string snapshot_json);
@@ -73,11 +75,15 @@ class IpcHostState
     /// Returns a consistent copy of the protocol-visible state.
     [[nodiscard]] IpcHostStateSnapshot snapshot() const;
 
+    /// Validates and dispatches one ShowToast payload without changing configuration version.
+    void show_toast(std::string payload_json) const;
+
   private:
     mutable std::mutex mutex_;
     std::uint64_t configuration_version_ = 0U;
     std::string snapshot_json_ = "null";
     SnapshotValidator validator_;
+    ToastHandler toast_handler_;
 };
 
 /// Result of processing one client message.

@@ -96,7 +96,7 @@ BOOL CALLBACK enumerate_monitor_callback(_In_ const HMONITOR monitor, _In_opt_ H
         return FALSE;
     }
 
-    monitors.push_back({monitor, information.rcMonitor, information.szDevice, {}, {}});
+    monitors.push_back({monitor, information.rcMonitor, information.rcWork, information.szDevice, {}, {}});
     return TRUE;
 }
 } // namespace

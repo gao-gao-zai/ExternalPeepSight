@@ -40,6 +40,12 @@ internal static class HostProcessManager
             WorkingDirectory = Path.GetDirectoryName(executable),
         };
         startInfo.ArgumentList.Add($"--instance-id={instanceId}");
+        string assetRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "ExternalPeepSight",
+            "assets");
+        Directory.CreateDirectory(assetRoot);
+        startInfo.ArgumentList.Add($"--assets-root={assetRoot}");
         string? uiExecutable = Environment.ProcessPath;
         if (!string.IsNullOrWhiteSpace(uiExecutable) && File.Exists(uiExecutable))
         {
