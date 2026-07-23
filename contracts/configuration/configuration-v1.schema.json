@@ -1,0 +1,503 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ExternalPeepSight configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "profiles",
+    "profileSets",
+    "assets",
+    "monitorSelection",
+    "switches",
+    "toasts"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "profiles": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "#/$defs/profile"
+      }
+    },
+    "profileSets": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "#/$defs/profileSet"
+      }
+    },
+    "assets": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "#/$defs/asset"
+      }
+    },
+    "monitorSelection": {
+      "$ref": "#/$defs/monitorSelection"
+    },
+    "switches": {
+      "$ref": "#/$defs/switches"
+    },
+    "toasts": {
+      "$ref": "#/$defs/toasts"
+    }
+  },
+  "$defs": {
+    "guid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "nullableGuid": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/guid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "pixelPoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "y"
+      ],
+      "properties": {
+        "x": {
+          "type": "integer",
+          "minimum": -100000,
+          "maximum": 100000
+        },
+        "y": {
+          "type": "integer",
+          "minimum": -100000,
+          "maximum": 100000
+        }
+      }
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{8}$"
+    },
+    "centerPoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "visible",
+        "color",
+        "radiusPx"
+      ],
+      "properties": {
+        "visible": {
+          "type": "boolean"
+        },
+        "color": {
+          "$ref": "#/$defs/color"
+        },
+        "radiusPx": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        }
+      }
+    },
+    "arm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "angleDeg",
+        "gapPx",
+        "lengthPx",
+        "widthPx",
+        "color",
+        "visible"
+      ],
+      "properties": {
+        "angleDeg": {
+          "type": "number",
+          "minimum": -360,
+          "maximum": 360
+        },
+        "gapPx": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "lengthPx": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "widthPx": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "color": {
+          "$ref": "#/$defs/color"
+        },
+        "visible": {
+          "type": "boolean"
+        }
+      }
+    },
+    "crosshair": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "anchor",
+        "offsetPx",
+        "center",
+        "arms",
+        "linked"
+      ],
+      "properties": {
+        "anchor": {
+          "enum": [
+            "screenCenter",
+            "topLeft"
+          ]
+        },
+        "offsetPx": {
+          "$ref": "#/$defs/pixelPoint"
+        },
+        "center": {
+          "$ref": "#/$defs/centerPoint"
+        },
+        "arms": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/arm"
+          }
+        },
+        "linked": {
+          "type": "boolean"
+        }
+      }
+    },
+    "imageOverlay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assetId",
+        "anchor",
+        "offsetPx",
+        "scale",
+        "keepAspectRatio"
+      ],
+      "properties": {
+        "assetId": {
+          "$ref": "#/$defs/nullableGuid"
+        },
+        "anchor": {
+          "enum": [
+            "screenCenter",
+            "topLeft"
+          ]
+        },
+        "offsetPx": {
+          "$ref": "#/$defs/pixelPoint"
+        },
+        "scale": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 100
+        },
+        "keepAspectRatio": {
+          "type": "boolean"
+        }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "activeMode",
+        "crosshair",
+        "image"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/guid"
+        },
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "activeMode": {
+          "enum": [
+            "crosshair",
+            "image"
+          ]
+        },
+        "crosshair": {
+          "$ref": "#/$defs/crosshair"
+        },
+        "image": {
+          "$ref": "#/$defs/imageOverlay"
+        }
+      }
+    },
+    "profileSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "profileIds",
+        "selectedProfileId"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/guid"
+        },
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "profileIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/guid"
+          },
+          "uniqueItems": true
+        },
+        "selectedProfileId": {
+          "$ref": "#/$defs/nullableGuid"
+        }
+      }
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "fileName",
+        "mediaType",
+        "sizeBytes",
+        "sha256"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/guid"
+        },
+        "fileName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[^/\\\\]+$"
+        },
+        "mediaType": {
+          "enum": [
+            "image/png",
+            "image/svg+xml"
+          ]
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10485760
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9A-Fa-f]{64}$"
+        }
+      }
+    },
+    "monitorSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "monitorIds",
+        "focusSource"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "all",
+            "explicit",
+            "focus"
+          ]
+        },
+        "monitorIds": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "focusSource": {
+          "enum": [
+            "foregroundWindowThenMouse",
+            "mouse"
+          ]
+        }
+      }
+    },
+    "keyIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scanCode",
+        "extended",
+        "modifiers"
+      ],
+      "properties": {
+        "scanCode": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "extended": {
+          "type": "boolean"
+        },
+        "modifiers": {
+          "type": "string"
+        }
+      }
+    },
+    "nullableKeyIdentity": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/keyIdentity"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "hotkey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "toggleKey",
+        "enableKey",
+        "disableKey",
+        "holdKey"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "unbound",
+            "independent",
+            "toggle",
+            "hold"
+          ]
+        },
+        "toggleKey": {
+          "$ref": "#/$defs/nullableKeyIdentity"
+        },
+        "enableKey": {
+          "$ref": "#/$defs/nullableKeyIdentity"
+        },
+        "disableKey": {
+          "$ref": "#/$defs/nullableKeyIdentity"
+        },
+        "holdKey": {
+          "$ref": "#/$defs/nullableKeyIdentity"
+        }
+      }
+    },
+    "switches": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "visibilityRule",
+        "initialStateA",
+        "initialStateB",
+        "switchA",
+        "switchB"
+      ],
+      "properties": {
+        "visibilityRule": {
+          "enum": [
+            "switchA",
+            "switchB",
+            "both",
+            "either"
+          ]
+        },
+        "initialStateA": {
+          "type": "boolean"
+        },
+        "initialStateB": {
+          "type": "boolean"
+        },
+        "switchA": {
+          "$ref": "#/$defs/hotkey"
+        },
+        "switchB": {
+          "$ref": "#/$defs/hotkey"
+        }
+      }
+    },
+    "toasts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "position",
+        "durationMs",
+        "fontFamily",
+        "fontSizePx",
+        "foreground",
+        "background"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "position": {
+          "enum": [
+            "topLeft",
+            "topCenter",
+            "topRight",
+            "bottomLeft",
+            "bottomCenter",
+            "bottomRight"
+          ]
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 60000
+        },
+        "fontFamily": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "fontSizePx": {
+          "type": "number",
+          "minimum": 6,
+          "maximum": 200
+        },
+        "foreground": {
+          "$ref": "#/$defs/color"
+        },
+        "background": {
+          "$ref": "#/$defs/color"
+        }
+      }
+    }
+  }
+}

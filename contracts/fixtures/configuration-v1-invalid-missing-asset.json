@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "profiles": [
+    {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "name": "Broken",
+      "activeMode": "image",
+      "crosshair": {
+        "anchor": "screenCenter",
+        "offsetPx": {
+          "x": 0,
+          "y": 0
+        },
+        "center": {
+          "visible": true,
+          "color": "#FFFFFFFF",
+          "radiusPx": 2
+        },
+        "arms": [],
+        "linked": true
+      },
+      "image": {
+        "assetId": "00000000-0000-0000-0000-000000000099",
+        "anchor": "screenCenter",
+        "offsetPx": {
+          "x": 0,
+          "y": 0
+        },
+        "scale": 1,
+        "keepAspectRatio": true
+      }
+    }
+  ],
+  "profileSets": [],
+  "assets": [],
+  "monitorSelection": {
+    "mode": "focus",
+    "monitorIds": [],
+    "focusSource": "foregroundWindowThenMouse"
+  },
+  "switches": {
+    "visibilityRule": "switchA",
+    "initialStateA": false,
+    "initialStateB": false,
+    "switchA": {
+      "mode": "unbound",
+      "toggleKey": null,
+      "enableKey": null,
+      "disableKey": null,
+      "holdKey": null
+    },
+    "switchB": {
+      "mode": "unbound",
+      "toggleKey": null,
+      "enableKey": null,
+      "disableKey": null,
+      "holdKey": null
+    }
+  },
+  "toasts": {
+    "enabled": true,
+    "position": "topCenter",
+    "durationMs": 1500,
+    "fontFamily": "Segoe UI",
+    "fontSizePx": 18,
+    "foreground": "#FFFFFFFF",
+    "background": "#000000B4"
+  }
+}
