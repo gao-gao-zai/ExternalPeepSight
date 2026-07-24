@@ -9,6 +9,7 @@
     Title="{DynamicResource Loc.App.Title}"
     Width="1240"
     Height="800"
+    Focusable="True"
     MinWidth="1040"
     MinHeight="680"
     WindowStartupLocation="CenterScreen">

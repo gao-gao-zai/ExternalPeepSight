@@ -46,17 +46,28 @@ public static class OverlayGeometry
             anchor.Y + crosshair.OffsetPx.Y);
 
         ArmGeometry[] arms = crosshair.Arms.Select(
-            arm =>
+            (arm, index) =>
             {
-                double radians = arm.AngleDeg * Math.PI / 180.0;
-                double directionX = Math.Sin(radians);
-                double directionY = -Math.Cos(radians);
-                var start = new PixelPointD(
-                    center.X + (directionX * arm.GapPx),
-                    center.Y + (directionY * arm.GapPx));
+                ArmDefaults defaults = CrosshairArmDefaults.Get(index);
+                double orbitRadians = (defaults.OrbitAngleDeg + arm.OrbitAngleOffsetDeg) * Math.PI / 180.0;
+                double rotationRadians =
+                    (defaults.OrbitAngleDeg + arm.OrbitAngleOffsetDeg + arm.RotationAngleOffsetDeg) *
+                    Math.PI / 180.0;
+                double orbitDirectionX = Math.Sin(orbitRadians);
+                double orbitDirectionY = -Math.Cos(orbitRadians);
+                double rotationDirectionX = Math.Sin(rotationRadians);
+                double rotationDirectionY = -Math.Cos(rotationRadians);
+                double gapPx = arm.GapPx;
+                double lengthPx = arm.LengthPx;
+                var midpoint = new PixelPointD(
+                    center.X + (orbitDirectionX * (gapPx + (lengthPx / 2.0))),
+                    center.Y + (orbitDirectionY * (gapPx + (lengthPx / 2.0))));
                 var end = new PixelPointD(
-                    start.X + (directionX * arm.LengthPx),
-                    start.Y + (directionY * arm.LengthPx));
+                    midpoint.X + (rotationDirectionX * (lengthPx / 2.0)),
+                    midpoint.Y + (rotationDirectionY * (lengthPx / 2.0)));
+                var start = new PixelPointD(
+                    midpoint.X - (rotationDirectionX * (lengthPx / 2.0)),
+                    midpoint.Y - (rotationDirectionY * (lengthPx / 2.0)));
                 return new ArmGeometry(start, end, arm.WidthPx, arm.Visible);
             }).ToArray();
 

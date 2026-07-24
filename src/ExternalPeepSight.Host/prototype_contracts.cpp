@@ -55,10 +55,10 @@ CrosshairGeometry calculate_crosshair_geometry(const float width_px, const float
                                                const float arm_length_px) noexcept
 {
     const std::array<CrosshairArmDefinition, 4> arms{
-        CrosshairArmDefinition{0.0F, gap_px, arm_length_px, 1.0F, true},
-        CrosshairArmDefinition{90.0F, gap_px, arm_length_px, 1.0F, true},
-        CrosshairArmDefinition{180.0F, gap_px, arm_length_px, 1.0F, true},
-        CrosshairArmDefinition{270.0F, gap_px, arm_length_px, 1.0F, true},
+        CrosshairArmDefinition{0.0F, 0.0F, gap_px, arm_length_px, 1.0F, true},
+        CrosshairArmDefinition{90.0F, 0.0F, gap_px, arm_length_px, 1.0F, true},
+        CrosshairArmDefinition{180.0F, 0.0F, gap_px, arm_length_px, 1.0F, true},
+        CrosshairArmDefinition{270.0F, 0.0F, gap_px, arm_length_px, 1.0F, true},
     };
     return calculate_crosshair_geometry(width_px, height_px, true, {0.0F, 0.0F}, arms);
 }
@@ -72,12 +72,19 @@ CrosshairGeometry calculate_crosshair_geometry(const float width_px, const float
     constexpr float radians_per_degree = 3.14159265358979323846F / 180.0F;
     for (std::size_t index = 0U; index < arms.size(); ++index)
     {
-        const float radians = arms[index].angle_deg * radians_per_degree;
-        const PointPx direction{std::sin(radians), -std::cos(radians)};
-        const PointPx start{center.x + direction.x * arms[index].gap_px, center.y + direction.y * arms[index].gap_px};
+        const float orbit_radians = arms[index].orbit_angle_deg * radians_per_degree;
+        const float rotation_radians =
+            (arms[index].orbit_angle_deg + arms[index].rotation_angle_offset_deg) * radians_per_degree;
+        const PointPx orbit_direction{std::sin(orbit_radians), -std::cos(orbit_radians)};
+        const PointPx rotation_direction{std::sin(rotation_radians), -std::cos(rotation_radians)};
+        const PointPx midpoint{center.x + orbit_direction.x * (arms[index].gap_px + (arms[index].length_px / 2.0F)),
+                               center.y + orbit_direction.y * (arms[index].gap_px + (arms[index].length_px / 2.0F))};
+        const PointPx start{midpoint.x - rotation_direction.x * (arms[index].length_px / 2.0F),
+                            midpoint.y - rotation_direction.y * (arms[index].length_px / 2.0F)};
         geometry.arms[index] = {
             start,
-            {start.x + direction.x * arms[index].length_px, start.y + direction.y * arms[index].length_px},
+            {midpoint.x + rotation_direction.x * (arms[index].length_px / 2.0F),
+             midpoint.y + rotation_direction.y * (arms[index].length_px / 2.0F)},
         };
     }
     return geometry;

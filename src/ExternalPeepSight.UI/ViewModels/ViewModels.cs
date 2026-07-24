@@ -485,10 +485,16 @@ internal sealed class CrosshairEditorViewModel : WorkspaceViewModel, IDisposable
         set => UpdateArm(arm => arm with { Visible = value }, applyWhenLinked: true);
     }
 
-    public double ArmAngle
+    public double ArmOrbitAngleOffset
     {
-        get => SelectedArm.AngleDeg;
-        set => UpdateArm(arm => arm with { AngleDeg = value }, applyWhenLinked: false);
+        get => SelectedArm.OrbitAngleOffsetDeg;
+        set => UpdateArm(arm => arm with { OrbitAngleOffsetDeg = value }, applyWhenLinked: true);
+    }
+
+    public double ArmRotationAngleOffset
+    {
+        get => SelectedArm.RotationAngleOffsetDeg;
+        set => UpdateArm(arm => arm with { RotationAngleOffsetDeg = value }, applyWhenLinked: true);
     }
 
     public int ArmGap
@@ -571,7 +577,8 @@ internal sealed class CrosshairEditorViewModel : WorkspaceViewModel, IDisposable
     private void RefreshArm()
     {
         OnPropertyChanged(nameof(ArmVisible));
-        OnPropertyChanged(nameof(ArmAngle));
+        OnPropertyChanged(nameof(ArmOrbitAngleOffset));
+        OnPropertyChanged(nameof(ArmRotationAngleOffset));
         OnPropertyChanged(nameof(ArmGap));
         OnPropertyChanged(nameof(ArmLength));
         OnPropertyChanged(nameof(ArmWidth));

@@ -46,7 +46,7 @@
   <data name="Crosshair.CenterPoint" xml:space="preserve"><value>Center point</value></data>
   <data name="Crosshair.CenterVisible" xml:space="preserve"><value>Show center point</value></data>
   <data name="Crosshair.CenterRadius" xml:space="preserve"><value>Center radius (px)</value></data>
-  <data name="Crosshair.Linked" xml:space="preserve"><value>Link arm size, gap, visibility, and color</value></data>
+  <data name="Crosshair.Linked" xml:space="preserve"><value>Link arm size, gap, visibility, and color offsets</value></data>
   <data name="Crosshair.LinkArms" xml:space="preserve"><value>Link arms</value></data>
   <data name="Crosshair.Arm" xml:space="preserve"><value>Arm</value></data>
   <data name="Crosshair.ArmTop" xml:space="preserve"><value>Top</value></data>
@@ -54,7 +54,8 @@
   <data name="Crosshair.ArmBottom" xml:space="preserve"><value>Bottom</value></data>
   <data name="Crosshair.ArmLeft" xml:space="preserve"><value>Left</value></data>
   <data name="Crosshair.ArmVisible" xml:space="preserve"><value>Show arm</value></data>
-  <data name="Crosshair.Angle" xml:space="preserve"><value>Angle (degrees)</value></data>
+  <data name="Crosshair.OrbitAngleOffset" xml:space="preserve"><value>Orbit angle offset (degrees)</value></data>
+  <data name="Crosshair.RotationAngleOffset" xml:space="preserve"><value>Rotation angle offset (degrees)</value></data>
   <data name="Crosshair.Gap" xml:space="preserve"><value>Gap (px)</value></data>
   <data name="Crosshair.Length" xml:space="preserve"><value>Length (px)</value></data>
   <data name="Crosshair.Width" xml:space="preserve"><value>Width (px)</value></data>

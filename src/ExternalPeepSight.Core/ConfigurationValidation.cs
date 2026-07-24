@@ -635,24 +635,43 @@ public static class ConfigurationValidator
                     continue;
                 }
 
-                if (double.IsNaN(arm.AngleDeg) || double.IsInfinity(arm.AngleDeg) || arm.AngleDeg is < -360 or > 360)
+                if (double.IsNaN(arm.OrbitAngleOffsetDeg) ||
+                    double.IsInfinity(arm.OrbitAngleOffsetDeg) ||
+                    arm.OrbitAngleOffsetDeg is < -720 or > 720)
                 {
-                    issues.Add(new ValidationIssue($"{path}.arms[{index}].angleDeg", "Arm angle must be between -360 and 360 degrees."));
+                    issues.Add(new ValidationIssue(
+                        $"{path}.arms[{index}].orbitAngleOffsetDeg",
+                        "Arm orbit angle offset must be between -720 and 720 degrees."));
                 }
 
-                if (arm.GapPx is < 0 or > 10000)
+                if (double.IsNaN(arm.RotationAngleOffsetDeg) ||
+                    double.IsInfinity(arm.RotationAngleOffsetDeg) ||
+                    arm.RotationAngleOffsetDeg is < -720 or > 720)
                 {
-                    issues.Add(new ValidationIssue($"{path}.arms[{index}].gapPx", "Arm gap must be between 0 and 10000 px."));
+                    issues.Add(new ValidationIssue(
+                        $"{path}.arms[{index}].rotationAngleOffsetDeg",
+                        "Arm rotation angle offset must be between -720 and 720 degrees."));
+                }
+
+                if (arm.GapPx is < -10000 or > 10000)
+                {
+                    issues.Add(new ValidationIssue(
+                        $"{path}.arms[{index}].gapPx",
+                        "Arm gap must be between -10000 and 10000 px."));
                 }
 
                 if (arm.LengthPx is < 0 or > 10000)
                 {
-                    issues.Add(new ValidationIssue($"{path}.arms[{index}].lengthPx", "Arm length must be between 0 and 10000 px."));
+                    issues.Add(new ValidationIssue(
+                        $"{path}.arms[{index}].lengthPx",
+                        "Arm length must be between 0 and 10000 px."));
                 }
 
                 if (arm.WidthPx is < 1 or > 1000)
                 {
-                    issues.Add(new ValidationIssue($"{path}.arms[{index}].widthPx", "Arm width must be between 1 and 1000 px."));
+                    issues.Add(new ValidationIssue(
+                        $"{path}.arms[{index}].widthPx",
+                        "Arm width must be between 1 and 1000 px."));
                 }
             }
         }

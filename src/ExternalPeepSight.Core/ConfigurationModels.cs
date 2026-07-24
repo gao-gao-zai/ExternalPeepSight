@@ -154,15 +154,55 @@ public sealed record CenterPoint(
     int RadiusPx);
 
 /// <summary>
-/// Defines one crosshair arm in monitor-local physical pixels.
+/// Defines one crosshair arm using angle offsets and absolute physical dimensions.
 /// </summary>
 public sealed record Arm(
-    double AngleDeg,
+    double OrbitAngleOffsetDeg,
+    double RotationAngleOffsetDeg,
     int GapPx,
     int LengthPx,
     int WidthPx,
     RgbaColor Color,
     bool Visible);
+
+/// <summary>
+/// Defines the default geometric values for one crosshair arm.
+/// </summary>
+public readonly record struct ArmDefaults(
+    double OrbitAngleDeg,
+    int GapPx,
+    int LengthPx,
+    int WidthPx);
+
+/// <summary>
+/// Resolves the stable defaults assigned to the four crosshair arms.
+/// </summary>
+public static class CrosshairArmDefaults
+{
+    private static readonly ArmDefaults[] Values =
+    [
+        new(0, 6, 12, 2),
+        new(90, 6, 12, 2),
+        new(180, 6, 12, 2),
+        new(270, 6, 12, 2),
+    ];
+
+    /// <summary>
+    /// Gets the defaults for an arm in up, right, down, and left order.
+    /// </summary>
+    /// <param name="armIndex">The zero-based arm index.</param>
+    /// <returns>The arm defaults.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The arm index is outside the four-arm range.</exception>
+    public static ArmDefaults Get(int armIndex)
+    {
+        if ((uint)armIndex >= Values.Length)
+        {
+            throw new ArgumentOutOfRangeException(nameof(armIndex));
+        }
+
+        return Values[armIndex];
+    }
+}
 
 /// <summary>
 /// Defines a four-arm crosshair.
@@ -337,10 +377,10 @@ public static class ConfigurationDefaults
         Guid profileSetId = Guid.NewGuid();
         Arm[] arms =
         [
-            new(0, 6, 12, 2, RgbaColor.White, true),
-            new(90, 6, 12, 2, RgbaColor.White, true),
-            new(180, 6, 12, 2, RgbaColor.White, true),
-            new(270, 6, 12, 2, RgbaColor.White, true),
+            new(0, 0, 6, 12, 2, RgbaColor.White, true),
+            new(0, 0, 6, 12, 2, RgbaColor.White, true),
+            new(0, 0, 6, 12, 2, RgbaColor.White, true),
+            new(0, 0, 6, 12, 2, RgbaColor.White, true),
         ];
 
         return new ConfigurationDocument

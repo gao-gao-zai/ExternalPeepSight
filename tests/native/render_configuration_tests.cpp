@@ -110,7 +110,7 @@ void write_bytes(const std::filesystem::path &path, const std::vector<std::uint8
     const std::string image_asset = asset_id.empty() ? "null" : std::format("\"{}\"", asset_id);
     return std::format(
         R"({{
-          "schemaVersion":3,
+          "schemaVersion":5,
           "profiles":[{{
             "id":"11111111-1111-1111-1111-111111111111",
             "name":"Test",
@@ -120,10 +120,10 @@ void write_bytes(const std::filesystem::path &path, const std::vector<std::uint8
               "offsetPx":{{"x":-3,"y":4}},
               "center":{{"visible":true,"color":"#11223344","radiusPx":3}},
               "arms":[
-                {{"angleDeg":0,"gapPx":6,"lengthPx":12,"widthPx":2,"color":"#FFFFFFFF","visible":true}},
-                {{"angleDeg":90,"gapPx":7,"lengthPx":13,"widthPx":3,"color":"#FF0000FF","visible":true}},
-                {{"angleDeg":180,"gapPx":8,"lengthPx":14,"widthPx":4,"color":"#00FF00FF","visible":false}},
-                {{"angleDeg":270,"gapPx":9,"lengthPx":15,"widthPx":5,"color":"#0000FFFF","visible":true}}
+                {{"orbitAngleOffsetDeg":0,"rotationAngleOffsetDeg":0,"gapPx":6,"lengthPx":12,"widthPx":2,"color":"#FFFFFFFF","visible":true}},
+                {{"orbitAngleOffsetDeg":0,"rotationAngleOffsetDeg":0,"gapPx":7,"lengthPx":13,"widthPx":3,"color":"#FF0000FF","visible":true}},
+                {{"orbitAngleOffsetDeg":0,"rotationAngleOffsetDeg":0,"gapPx":8,"lengthPx":14,"widthPx":4,"color":"#00FF00FF","visible":false}},
+                {{"orbitAngleOffsetDeg":0,"rotationAngleOffsetDeg":0,"gapPx":9,"lengthPx":15,"widthPx":5,"color":"#0000FFFF","visible":true}}
               ],
               "linked":false
             }},

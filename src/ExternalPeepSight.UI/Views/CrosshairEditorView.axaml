@@ -273,18 +273,32 @@
                                                 IsChecked="{Binding ArmVisible, Mode=TwoWay}" />
                                         </Grid>
                                         <Grid ColumnDefinitions="128,*,10,96">
-                                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Crosshair.Angle}" />
+                                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Crosshair.OrbitAngleOffset}" />
                                             <Slider
                                                 Grid.Column="1"
                                                 Classes="inspector-slider"
                                                 Maximum="360"
                                                 Minimum="-360"
-                                                Value="{Binding ArmAngle, Mode=TwoWay}" />
+                                                Value="{Binding ArmOrbitAngleOffset, Mode=TwoWay}" />
                                             <fa:FANumberBox
                                                 Grid.Column="3"
+                                                Maximum="720"
+                                                Minimum="-720"
+                                                Value="{Binding ArmOrbitAngleOffset, Mode=TwoWay}" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="128,*,10,96">
+                                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Crosshair.RotationAngleOffset}" />
+                                            <Slider
+                                                Grid.Column="1"
+                                                Classes="inspector-slider"
                                                 Maximum="360"
                                                 Minimum="-360"
-                                                Value="{Binding ArmAngle, Mode=TwoWay}" />
+                                                Value="{Binding ArmRotationAngleOffset, Mode=TwoWay}" />
+                                            <fa:FANumberBox
+                                                Grid.Column="3"
+                                                Maximum="720"
+                                                Minimum="-720"
+                                                Value="{Binding ArmRotationAngleOffset, Mode=TwoWay}" />
                                         </Grid>
                                         <Grid ColumnDefinitions="128,*,10,96">
                                             <TextBlock Classes="field-label" Text="{DynamicResource Loc.Crosshair.Gap}" />
@@ -292,12 +306,12 @@
                                                 Grid.Column="1"
                                                 Classes="inspector-slider"
                                                 Maximum="100"
-                                                Minimum="0"
+                                                Minimum="-100"
                                                 Value="{Binding ArmGap, Mode=TwoWay}" />
                                             <fa:FANumberBox
                                                 Grid.Column="3"
-                                                Maximum="10000"
-                                                Minimum="0"
+                                                Maximum="9994"
+                                                Minimum="-10000"
                                                 Value="{Binding ArmGap, Mode=TwoWay}" />
                                         </Grid>
                                         <Grid ColumnDefinitions="128,*,10,96">
@@ -310,7 +324,7 @@
                                                 Value="{Binding ArmLength, Mode=TwoWay}" />
                                             <fa:FANumberBox
                                                 Grid.Column="3"
-                                                Maximum="10000"
+                                                Maximum="9988"
                                                 Minimum="0"
                                                 Value="{Binding ArmLength, Mode=TwoWay}" />
                                         </Grid>
@@ -324,7 +338,7 @@
                                                 Value="{Binding ArmWidth, Mode=TwoWay}" />
                                             <fa:FANumberBox
                                                 Grid.Column="3"
-                                                Maximum="1000"
+                                                Maximum="998"
                                                 Minimum="1"
                                                 Value="{Binding ArmWidth, Mode=TwoWay}" />
                                         </Grid>

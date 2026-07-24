@@ -27,8 +27,10 @@ struct LineSegmentPx
 /// Defines one independently configurable crosshair arm.
 struct CrosshairArmDefinition
 {
-    /// Clockwise angle where zero degrees points upward.
-    float angle_deg;
+    /// Clockwise orbit angle locating the arm around the center.
+    float orbit_angle_deg;
+    /// Clockwise rotation offset from the arm's outward radial direction.
+    float rotation_angle_offset_deg;
     /// Distance from the center to the segment start in physical pixels.
     float gap_px;
     /// Segment length in physical pixels.

@@ -132,6 +132,31 @@ TEST(CrosshairGeometry, PreservesHalfPixelCenterForOddSurfaceDimensions)
     EXPECT_FLOAT_EQ(539.5F, geometry.center.y);
 }
 
+TEST(CrosshairGeometry, RotationOffsetKeepsArmMidpointFixed)
+{
+    const std::array<external_peepsight::CrosshairArmDefinition, 4> base_arms{
+        external_peepsight::CrosshairArmDefinition{45.0F, 0.0F, 6.0F, 12.0F, 2.0F, true},
+        external_peepsight::CrosshairArmDefinition{90.0F, 0.0F, 6.0F, 12.0F, 2.0F, true},
+        external_peepsight::CrosshairArmDefinition{180.0F, 0.0F, 6.0F, 12.0F, 2.0F, true},
+        external_peepsight::CrosshairArmDefinition{270.0F, 0.0F, 6.0F, 12.0F, 2.0F, true},
+    };
+    const external_peepsight::CrosshairGeometry baseline =
+        external_peepsight::calculate_crosshair_geometry(1000.0F, 1000.0F, true, {0.0F, 0.0F}, base_arms);
+
+    std::array<external_peepsight::CrosshairArmDefinition, 4> changed_arms = base_arms;
+    changed_arms[0].rotation_angle_offset_deg = 90.0F;
+    const external_peepsight::CrosshairGeometry rotated =
+        external_peepsight::calculate_crosshair_geometry(1000.0F, 1000.0F, true, {0.0F, 0.0F}, changed_arms);
+
+    const auto midpoint = [](const external_peepsight::LineSegmentPx &arm)
+    { return external_peepsight::PointPx{(arm.start.x + arm.end.x) / 2.0F, (arm.start.y + arm.end.y) / 2.0F}; };
+    const external_peepsight::PointPx baseline_midpoint = midpoint(baseline.arms[0]);
+    const external_peepsight::PointPx rotated_midpoint = midpoint(rotated.arms[0]);
+
+    EXPECT_FLOAT_EQ(baseline_midpoint.x, rotated_midpoint.x);
+    EXPECT_FLOAT_EQ(baseline_midpoint.y, rotated_midpoint.y);
+}
+
 TEST(CrosshairGeometry, MatchesSharedGoldenFixtures)
 {
     winrt::init_apartment(winrt::apartment_type::multi_threaded);
@@ -146,11 +171,13 @@ TEST(CrosshairGeometry, MatchesSharedGoldenFixtures)
         ASSERT_EQ(4U, arm_values.Size());
 
         std::array<external_peepsight::CrosshairArmDefinition, 4> arms{};
+        constexpr std::array<float, 4> default_angles{0.0F, 90.0F, 180.0F, 270.0F};
         for (std::uint32_t index = 0U; index < arm_values.Size(); ++index)
         {
             const JsonObject arm = arm_values.GetObjectAt(index);
             arms[index] = {
-                static_cast<float>(arm.GetNamedNumber(L"angleDeg")),
+                default_angles[index] + static_cast<float>(arm.GetNamedNumber(L"orbitAngleOffsetDeg")),
+                static_cast<float>(arm.GetNamedNumber(L"rotationAngleOffsetDeg")),
                 static_cast<float>(arm.GetNamedNumber(L"gapPx")),
                 static_cast<float>(arm.GetNamedNumber(L"lengthPx")),
                 static_cast<float>(arm.GetNamedNumber(L"widthPx")),
@@ -179,10 +206,10 @@ TEST(CrosshairGeometry, BoundsIncludeVisibleStrokesAndExcludeHiddenArms)
 {
     const RECT monitor{-1920, 0, 0, 1080};
     const std::array<external_peepsight::CrosshairArmDefinition, 4> arms{
-        external_peepsight::CrosshairArmDefinition{0.0F, 6.0F, 12.0F, 2.0F, true},
-        external_peepsight::CrosshairArmDefinition{90.0F, 6.0F, 200.0F, 20.0F, false},
-        external_peepsight::CrosshairArmDefinition{180.0F, 6.0F, 12.0F, 2.0F, true},
-        external_peepsight::CrosshairArmDefinition{270.0F, 6.0F, 12.0F, 2.0F, true},
+        external_peepsight::CrosshairArmDefinition{0.0F, 0.0F, 6.0F, 12.0F, 2.0F, true},
+        external_peepsight::CrosshairArmDefinition{90.0F, 90.0F, 6.0F, 200.0F, 20.0F, false},
+        external_peepsight::CrosshairArmDefinition{180.0F, 180.0F, 6.0F, 12.0F, 2.0F, true},
+        external_peepsight::CrosshairArmDefinition{270.0F, 270.0F, 6.0F, 12.0F, 2.0F, true},
     };
 
     const RECT bounds =

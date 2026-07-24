@@ -44,6 +44,7 @@ constexpr float kMaximumCoordinatePx = 100'000.0F;
 constexpr float kMaximumStrokePx = 2'000.0F;
 constexpr float kMaximumScale = 100.0F;
 constexpr std::uint32_t kMaximumSvgElements = 10'000U;
+constexpr std::array<float, 4> kDefaultOrbitAnglesDeg{0.0F, 90.0F, 180.0F, 270.0F};
 
 struct AssetReferenceValue
 {
@@ -519,10 +520,11 @@ struct AssetReferenceValue
     {
         const JsonObject arm = arm_values.GetObjectAt(index);
         result.arms[index] = {
-            checked_number(arm, L"angleDeg", -3600.0F, 3600.0F),
-            checked_number(arm, L"gapPx", 0.0F, kMaximumCoordinatePx),
-            checked_number(arm, L"lengthPx", 0.0F, kMaximumCoordinatePx),
-            checked_number(arm, L"widthPx", 0.0F, kMaximumStrokePx),
+            kDefaultOrbitAnglesDeg[index] + checked_number(arm, L"orbitAngleOffsetDeg", -720.0F, 720.0F),
+            checked_number(arm, L"rotationAngleOffsetDeg", -720.0F, 720.0F),
+            checked_number(arm, L"gapPx", -10'000.0F, 10'000.0F),
+            checked_number(arm, L"lengthPx", 0.0F, 10'000.0F),
+            checked_number(arm, L"widthPx", 1.0F, 1'000.0F),
             arm.GetNamedBoolean(L"visible"),
         };
         result.arm_colors[index] = parse_color(arm.GetNamedString(L"color"));
@@ -642,7 +644,7 @@ RenderConfiguration parse_render_configuration(const std::string_view snapshot_j
                                                const std::filesystem::path &asset_root)
 {
     const JsonObject root = JsonObject::Parse(winrt::to_hstring(snapshot_json));
-    if (checked_integer(root, L"schemaVersion", 3U, 3U) != 3U)
+    if (checked_integer(root, L"schemaVersion", 5U, 5U) != 5U)
     {
         throw std::invalid_argument("Configuration schema version is not supported.");
     }
@@ -663,10 +665,10 @@ RenderConfiguration make_default_render_configuration()
 {
     constexpr RenderColor white{255U, 255U, 255U, 255U};
     const std::array<CrosshairArmDefinition, 4> arms{
-        CrosshairArmDefinition{0.0F, 6.0F, 12.0F, 2.0F, true},
-        CrosshairArmDefinition{90.0F, 6.0F, 12.0F, 2.0F, true},
-        CrosshairArmDefinition{180.0F, 6.0F, 12.0F, 2.0F, true},
-        CrosshairArmDefinition{270.0F, 6.0F, 12.0F, 2.0F, true},
+        CrosshairArmDefinition{0.0F, 0.0F, 6.0F, 12.0F, 2.0F, true},
+        CrosshairArmDefinition{90.0F, 0.0F, 6.0F, 12.0F, 2.0F, true},
+        CrosshairArmDefinition{180.0F, 0.0F, 6.0F, 12.0F, 2.0F, true},
+        CrosshairArmDefinition{270.0F, 0.0F, 6.0F, 12.0F, 2.0F, true},
     };
     return {
         "built-in-default",

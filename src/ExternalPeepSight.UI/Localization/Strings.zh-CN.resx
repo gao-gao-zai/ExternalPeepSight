@@ -46,7 +46,7 @@
   <data name="Crosshair.CenterPoint" xml:space="preserve"><value>中心点</value></data>
   <data name="Crosshair.CenterVisible" xml:space="preserve"><value>显示中心点</value></data>
   <data name="Crosshair.CenterRadius" xml:space="preserve"><value>中心点半径（px）</value></data>
-  <data name="Crosshair.Linked" xml:space="preserve"><value>联动支臂尺寸、间距、可见性和颜色</value></data>
+  <data name="Crosshair.Linked" xml:space="preserve"><value>联动支臂尺寸、间距、可见性和颜色偏移</value></data>
   <data name="Crosshair.LinkArms" xml:space="preserve"><value>联动支臂</value></data>
   <data name="Crosshair.Arm" xml:space="preserve"><value>支臂</value></data>
   <data name="Crosshair.ArmTop" xml:space="preserve"><value>上</value></data>
@@ -54,7 +54,8 @@
   <data name="Crosshair.ArmBottom" xml:space="preserve"><value>下</value></data>
   <data name="Crosshair.ArmLeft" xml:space="preserve"><value>左</value></data>
   <data name="Crosshair.ArmVisible" xml:space="preserve"><value>显示支臂</value></data>
-  <data name="Crosshair.Angle" xml:space="preserve"><value>角度（度）</value></data>
+  <data name="Crosshair.OrbitAngleOffset" xml:space="preserve"><value>公转角偏移（度）</value></data>
+  <data name="Crosshair.RotationAngleOffset" xml:space="preserve"><value>自转角偏移（度）</value></data>
   <data name="Crosshair.Gap" xml:space="preserve"><value>间距（px）</value></data>
   <data name="Crosshair.Length" xml:space="preserve"><value>长度（px）</value></data>
   <data name="Crosshair.Width" xml:space="preserve"><value>宽度（px）</value></data>

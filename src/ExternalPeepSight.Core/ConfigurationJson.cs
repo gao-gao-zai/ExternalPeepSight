@@ -28,7 +28,7 @@ public static class ConfigurationJson
     /// <summary>
     /// Gets the newest schema version supported by this build.
     /// </summary>
-    public const int CurrentSchemaVersion = 3;
+    public const int CurrentSchemaVersion = 5;
 
     private static readonly JsonSerializerOptions CompactOptions = CreateOptions(false);
     private static readonly JsonSerializerOptions IndentedOptions = CreateOptions(true);
@@ -73,9 +73,11 @@ public static class ConfigurationJson
             int version = GetSchemaVersion(root);
             JsonObject migrated = version switch
             {
-                0 => MigrateVersionTwo(MigrateVersionOne(MigrateVersionZero(root))),
-                1 => MigrateVersionTwo(MigrateVersionOne(root)),
-                2 => MigrateVersionTwo(root),
+                0 => MigrateVersionFour(MigrateVersionThree(MigrateVersionTwo(MigrateVersionOne(MigrateVersionZero(root))))),
+                1 => MigrateVersionFour(MigrateVersionThree(MigrateVersionTwo(MigrateVersionOne(root)))),
+                2 => MigrateVersionFour(MigrateVersionThree(MigrateVersionTwo(root))),
+                3 => MigrateVersionFour(MigrateVersionThree(root)),
+                4 => MigrateVersionFour(root),
                 CurrentSchemaVersion => root,
                 > CurrentSchemaVersion => throw new ConfigurationFormatException(
                     $"Configuration schema version {version} is newer than supported version {CurrentSchemaVersion}."),
@@ -177,6 +179,96 @@ public static class ConfigurationJson
 
                 MigrateBindingKeys(switches["switchA"] as JsonObject);
                 MigrateBindingKeys(switches["switchB"] as JsonObject);
+            }
+        }
+
+        migrated["schemaVersion"] = CurrentSchemaVersion;
+        return migrated;
+    }
+
+    private static JsonObject MigrateVersionFour(JsonObject root)
+    {
+        var migrated = (JsonObject)root.DeepClone();
+        if (migrated["profiles"] is JsonArray profiles)
+        {
+            foreach (JsonNode? profileNode in profiles)
+            {
+                if (profileNode is not JsonObject profile ||
+                    profile["crosshair"] is not JsonObject crosshair ||
+                    crosshair["arms"] is not JsonArray arms)
+                {
+                    continue;
+                }
+
+                for (int index = 0; index < arms.Count; index++)
+                {
+                    if (arms[index] is not JsonObject arm ||
+                        arm["gapOffsetPx"] is null)
+                    {
+                        continue;
+                    }
+
+                    ArmDefaults defaults = CrosshairArmDefaults.Get(index);
+                    arm["gapPx"] = defaults.GapPx + arm["gapOffsetPx"]!.GetValue<int>();
+                    arm["lengthPx"] = defaults.LengthPx + arm["lengthOffsetPx"]!.GetValue<int>();
+                    arm["widthPx"] = defaults.WidthPx + arm["widthOffsetPx"]!.GetValue<int>();
+                    arm.Remove("gapOffsetPx");
+                    arm.Remove("lengthOffsetPx");
+                    arm.Remove("widthOffsetPx");
+                }
+            }
+        }
+
+        migrated["schemaVersion"] = CurrentSchemaVersion;
+        return migrated;
+    }
+
+    private static JsonObject MigrateVersionThree(JsonObject root)
+    {
+        var migrated = (JsonObject)root.DeepClone();
+        if (migrated["profiles"] is JsonArray profiles)
+        {
+            foreach (JsonNode? profileNode in profiles)
+            {
+                if (profileNode is not JsonObject profile ||
+                    profile["crosshair"] is not JsonObject crosshair ||
+                    crosshair["arms"] is not JsonArray arms)
+                {
+                    continue;
+                }
+
+                for (int index = 0; index < arms.Count; index++)
+                {
+                    if (arms[index] is not JsonObject arm)
+                    {
+                        continue;
+                    }
+
+                    if (arm["orbitAngleOffsetDeg"] is not null)
+                    {
+                        continue;
+                    }
+
+                    ArmDefaults defaults = CrosshairArmDefaults.Get(index);
+                    double angleDeg = arm["angleDeg"]?.GetValue<double>()
+                        ?? throw new ConfigurationFormatException($"Profile arm {index} is missing angleDeg.");
+                    int gapPx = arm["gapPx"]?.GetValue<int>()
+                        ?? throw new ConfigurationFormatException($"Profile arm {index} is missing gapPx.");
+                    int lengthPx = arm["lengthPx"]?.GetValue<int>()
+                        ?? throw new ConfigurationFormatException($"Profile arm {index} is missing lengthPx.");
+                    int widthPx = arm["widthPx"]?.GetValue<int>()
+                        ?? throw new ConfigurationFormatException($"Profile arm {index} is missing widthPx.");
+
+                    arm["orbitAngleOffsetDeg"] = angleDeg - defaults.OrbitAngleDeg;
+                    arm["rotationAngleOffsetDeg"] = 0;
+                    arm["gapOffsetPx"] = gapPx - defaults.GapPx;
+                    arm["lengthOffsetPx"] = lengthPx - defaults.LengthPx;
+                    arm["widthOffsetPx"] = widthPx - defaults.WidthPx;
+                    arm.Remove("angleDeg");
+                    arm.Remove("gapPx");
+                    arm.Remove("lengthPx");
+                    arm.Remove("widthPx");
+                }
             }
         }
 

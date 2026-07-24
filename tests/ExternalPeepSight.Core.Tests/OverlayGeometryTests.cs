@@ -18,7 +18,8 @@ public sealed class OverlayGeometryTests
             Arm[] arms = item.GetProperty("arms").EnumerateArray()
                 .Select(
                     arm => new Arm(
-                        arm.GetProperty("angleDeg").GetDouble(),
+                        arm.GetProperty("orbitAngleOffsetDeg").GetDouble(),
+                        arm.GetProperty("rotationAngleOffsetDeg").GetDouble(),
                         arm.GetProperty("gapPx").GetInt32(),
                         arm.GetProperty("lengthPx").GetInt32(),
                         arm.GetProperty("widthPx").GetInt32(),
@@ -61,9 +62,79 @@ public sealed class OverlayGeometryTests
             () => OverlayGeometry.CalculateCrosshair(defaults.Profiles[0].Crosshair, new PixelSize(0, 1080)));
     }
 
+    [Fact]
+    public void OrbitAndRotationOffsetsControlDifferentPartsOfArmGeometry()
+    {
+        ConfigurationDocument defaults = ConfigurationDefaults.Create();
+        Crosshair crosshair = defaults.Profiles[0].Crosshair with
+        {
+            Arms =
+            [
+                defaults.Profiles[0].Crosshair.Arms[0] with
+                {
+                    OrbitAngleOffsetDeg = 30,
+                    RotationAngleOffsetDeg = 90,
+                },
+                .. defaults.Profiles[0].Crosshair.Arms[1..],
+            ],
+        };
+
+        CrosshairGeometryResult actual = OverlayGeometry.CalculateCrosshair(crosshair, new PixelSize(1000, 1000));
+
+        Assert.Equal(500 + (12 * 0.5) - (6 * Math.Sqrt(3) / 2), actual.Arms[0].Start.X, 8);
+        Assert.Equal(500 - (12 * Math.Sqrt(3) / 2) - 3, actual.Arms[0].Start.Y, 8);
+        Assert.Equal(actual.Arms[0].Start.X + (12 * Math.Sqrt(3) / 2), actual.Arms[0].End.X, 8);
+        Assert.Equal(actual.Arms[0].Start.Y + 6, actual.Arms[0].End.Y, 8);
+    }
+
+    [Fact]
+    public void RotationOffsetKeepsArmMidpointFixedAndFollowsOrbitAngle()
+    {
+        ConfigurationDocument defaults = ConfigurationDefaults.Create();
+        Crosshair baseCrosshair = defaults.Profiles[0].Crosshair with
+        {
+            Arms =
+            [
+                defaults.Profiles[0].Crosshair.Arms[0] with { OrbitAngleOffsetDeg = 45 },
+                .. defaults.Profiles[0].Crosshair.Arms[1..],
+            ],
+        };
+        Crosshair rotatedCrosshair = baseCrosshair with
+        {
+            Arms =
+            [
+                baseCrosshair.Arms[0] with { RotationAngleOffsetDeg = 90 },
+                .. baseCrosshair.Arms[1..],
+            ],
+        };
+
+        CrosshairGeometryResult baseline = OverlayGeometry.CalculateCrosshair(
+            baseCrosshair,
+            new PixelSize(1000, 1000));
+        CrosshairGeometryResult rotated = OverlayGeometry.CalculateCrosshair(
+            rotatedCrosshair,
+            new PixelSize(1000, 1000));
+        PixelPointD baselineMidpoint = Midpoint(baseline.Arms[0]);
+        PixelPointD rotatedMidpoint = Midpoint(rotated.Arms[0]);
+
+        Assert.Equal(baselineMidpoint.X, rotatedMidpoint.X, 8);
+        Assert.Equal(baselineMidpoint.Y, rotatedMidpoint.Y, 8);
+        Assert.Equal(
+            -45,
+            Math.Atan2(
+                    -(rotated.Arms[0].End.Y - rotated.Arms[0].Start.Y),
+                    rotated.Arms[0].End.X - rotated.Arms[0].Start.X) *
+                180 /
+                Math.PI,
+            8);
+    }
+
     private static void AssertPoint(JsonElement expected, PixelPointD actual)
     {
         Assert.Equal(expected.GetProperty("x").GetDouble(), actual.X, 8);
         Assert.Equal(expected.GetProperty("y").GetDouble(), actual.Y, 8);
     }
+
+    private static PixelPointD Midpoint(ArmGeometry arm) =>
+        new((arm.Start.X + arm.End.X) / 2, (arm.Start.Y + arm.End.Y) / 2);
 }

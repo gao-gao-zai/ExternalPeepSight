@@ -127,12 +127,37 @@ public sealed class UiWorkflowTests
         CrosshairEditorViewModel editor = context.ViewModel.Crosshair;
 
         editor.Linked = true;
-        editor.ArmLength = 48;
+        editor.ArmLength = 36;
 
-        Assert.All(context.Workspace.SelectedProfile.Crosshair.Arms, arm => Assert.Equal(48, arm.LengthPx));
+        Assert.All(context.Workspace.SelectedProfile.Crosshair.Arms, arm => Assert.Equal(36, arm.LengthPx));
         editor.ArmWidth = 0;
         Assert.All(context.Workspace.SelectedProfile.Crosshair.Arms, arm => Assert.NotEqual(0, arm.WidthPx));
         Assert.NotNull(context.Workspace.ErrorMessage);
+    }
+
+    [Fact]
+    public void LinkedArmEditSynchronizesAllGeometricOffsets()
+    {
+        using TestContext context = CreateContext();
+        CrosshairEditorViewModel editor = context.ViewModel.Crosshair;
+
+        editor.Linked = true;
+        editor.ArmOrbitAngleOffset = 15;
+        editor.ArmRotationAngleOffset = -20;
+        editor.ArmGap = 2;
+        editor.ArmLength = 4;
+        editor.ArmWidth = 1;
+
+        Assert.All(
+            context.Workspace.SelectedProfile.Crosshair.Arms,
+            arm =>
+            {
+                Assert.Equal(15, arm.OrbitAngleOffsetDeg);
+                Assert.Equal(-20, arm.RotationAngleOffsetDeg);
+                Assert.Equal(2, arm.GapPx);
+                Assert.Equal(4, arm.LengthPx);
+                Assert.Equal(1, arm.WidthPx);
+            });
     }
 
     [Fact]
@@ -177,7 +202,7 @@ public sealed class UiWorkflowTests
     {
         using TestContext context = CreateContext(new RejectingHostSession());
 
-        context.ViewModel.Crosshair.ArmLength = 48;
+        context.ViewModel.Crosshair.ArmLength = 36;
 
         Assert.True(SpinWait.SpinUntil(
             () => context.Workspace.ErrorMessage?.Contains("InputRegistrationFailed", StringComparison.Ordinal) == true,

@@ -117,7 +117,8 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "angleDeg",
+        "orbitAngleOffsetDeg",
+        "rotationAngleOffsetDeg",
         "gapPx",
         "lengthPx",
         "widthPx",
@@ -125,14 +126,19 @@
         "visible"
       ],
       "properties": {
-        "angleDeg": {
+        "orbitAngleOffsetDeg": {
           "type": "number",
-          "minimum": -360,
-          "maximum": 360
+          "minimum": -720,
+          "maximum": 720
+        },
+        "rotationAngleOffsetDeg": {
+          "type": "number",
+          "minimum": -720,
+          "maximum": 720
         },
         "gapPx": {
           "type": "integer",
-          "minimum": 0,
+          "minimum": -10000,
           "maximum": 10000
         },
         "lengthPx": {

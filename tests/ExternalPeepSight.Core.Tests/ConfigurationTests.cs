@@ -19,8 +19,8 @@ public sealed class ConfigurationTests
         Assert.Equal(
             ConfigurationJson.Serialize(document),
             ConfigurationJson.Serialize(restored));
-        Assert.Contains("\"schemaVersion\":3", json);
-        Assert.Contains("\"angleDeg\":0", json);
+        Assert.Contains("\"schemaVersion\":5", json);
+        Assert.Contains("\"orbitAngleOffsetDeg\":0", json);
         Assert.DoesNotContain("\"switches\":", json[..json.IndexOf("\"profiles\"", StringComparison.Ordinal)]);
     }
 
@@ -111,6 +111,71 @@ public sealed class ConfigurationTests
     }
 
     [Fact]
+    public void VersionThreeAbsoluteArmValuesAreMigratedToCurrentSchema()
+    {
+        JsonObject versionThree = JsonNode.Parse(ConfigurationJson.Serialize(ConfigurationDefaults.Create()))!.AsObject();
+        versionThree["schemaVersion"] = 3;
+        JsonArray arms = versionThree["profiles"]![0]!["crosshair"]!["arms"]!.AsArray();
+        for (int index = 0; index < arms.Count; index++)
+        {
+            JsonObject arm = arms[index]!.AsObject();
+            ArmDefaults defaults = CrosshairArmDefaults.Get(index);
+            arm["angleDeg"] = defaults.OrbitAngleDeg + 15;
+            arm["gapPx"] = defaults.GapPx + 2;
+            arm["lengthPx"] = defaults.LengthPx - 1;
+            arm["widthPx"] = defaults.WidthPx + 1;
+            arm.Remove("orbitAngleOffsetDeg");
+            arm.Remove("rotationAngleOffsetDeg");
+            arm.Remove("gapOffsetPx");
+            arm.Remove("lengthOffsetPx");
+            arm.Remove("widthOffsetPx");
+        }
+
+        ConfigurationDocument restored = ConfigurationJson.Deserialize(versionThree.ToJsonString());
+        Assert.Equal(5, restored.SchemaVersion);
+        Assert.All(
+            restored.Profiles[0].Crosshair.Arms,
+            arm =>
+            {
+                Assert.Equal(15, arm.OrbitAngleOffsetDeg);
+                Assert.Equal(0, arm.RotationAngleOffsetDeg);
+                Assert.Equal(8, arm.GapPx);
+                Assert.Equal(11, arm.LengthPx);
+                Assert.Equal(3, arm.WidthPx);
+            });
+    }
+
+    [Fact]
+    public void VersionFourDimensionOffsetsAreMigratedToAbsoluteValues()
+    {
+        JsonObject versionFour = JsonNode.Parse(ConfigurationJson.Serialize(ConfigurationDefaults.Create()))!.AsObject();
+        versionFour["schemaVersion"] = 4;
+        JsonArray arms = versionFour["profiles"]![0]!["crosshair"]!["arms"]!.AsArray();
+        foreach (JsonNode? node in arms)
+        {
+            JsonObject arm = node!.AsObject();
+            arm["gapOffsetPx"] = -8;
+            arm["lengthOffsetPx"] = 3;
+            arm["widthOffsetPx"] = 2;
+            arm.Remove("gapPx");
+            arm.Remove("lengthPx");
+            arm.Remove("widthPx");
+        }
+
+        ConfigurationDocument restored = ConfigurationJson.Deserialize(versionFour.ToJsonString());
+
+        Assert.Equal(5, restored.SchemaVersion);
+        Assert.All(
+            restored.Profiles[0].Crosshair.Arms,
+            arm =>
+            {
+                Assert.Equal(-2, arm.GapPx);
+                Assert.Equal(15, arm.LengthPx);
+                Assert.Equal(4, arm.WidthPx);
+            });
+    }
+
+    [Fact]
     public void MouseBindingRoundTripsThroughJson()
     {
         ConfigurationDocument document = ConfigurationDefaults.Create();
@@ -147,7 +212,7 @@ public sealed class ConfigurationTests
     public void NewerSchemaVersionIsRejected()
     {
         string json = ConfigurationJson.Serialize(ConfigurationDefaults.Create())
-            .Replace("\"schemaVersion\":3", "\"schemaVersion\":99");
+            .Replace("\"schemaVersion\":5", "\"schemaVersion\":99");
 
         Assert.Throws<ConfigurationFormatException>(() => ConfigurationJson.Deserialize(json));
     }
@@ -177,7 +242,7 @@ public sealed class ConfigurationTests
                     {
                         Arms =
                         [
-                            new(double.NaN, -1, 10001, 0, RgbaColor.White, true),
+                            new(double.NaN, double.NaN, -7, 9989, -3, RgbaColor.White, true),
                         ],
                     },
                     Image = new ImageOverlay(Guid.NewGuid(), AnchorMode.ScreenCenter, new PixelPoint(200000, 0), 0, true),

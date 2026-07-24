@@ -457,7 +457,7 @@ InputConfiguration parse_input_configuration(const std::string_view snapshot_jso
 
     const JsonObject root = JsonObject::Parse(winrt::to_hstring(snapshot_json));
     const double schema_version = root.GetNamedNumber(L"schemaVersion");
-    if (!std::isfinite(schema_version) || schema_version != 3.0)
+    if (!std::isfinite(schema_version) || schema_version != 5.0)
     {
         throw std::invalid_argument("Input configuration schema version is not supported.");
     }

@@ -65,9 +65,9 @@ public sealed class ConfigurationValidationTests
                 Arms =
                 [
                     null!,
-                    new(double.PositiveInfinity, -1, -1, 0, RgbaColor.White, true),
-                    new(361, 10001, 10001, 1001, RgbaColor.White, true),
-                    new(-361, 0, 0, 1, RgbaColor.White, true),
+                    new(double.PositiveInfinity, double.PositiveInfinity, -7, -13, -3, RgbaColor.White, true),
+                    new(721, 0, 10000, 10000, 1000, RgbaColor.White, true),
+                    new(-721, 0, 0, 0, -1, RgbaColor.White, true),
                 ],
             },
             Image = new ImageOverlay(null, AnchorMode.TopLeft, new PixelPoint(-100001, 100001), double.PositiveInfinity, false),

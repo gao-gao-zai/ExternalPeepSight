@@ -88,7 +88,7 @@ BOOL CALLBACK find_input_window(_In_ const HWND window, _In_ const LPARAM parame
 [[nodiscard]] std::string valid_snapshot(const std::string_view modifiers = "none",
                                          const std::string_view selected_profile_id = "profile-a")
 {
-    return "{\"schemaVersion\":3,\"profiles\":[{\"id\":\"profile-a\",\"switches\":{\"visibilityRule\":\"either\","
+    return "{\"schemaVersion\":5,\"profiles\":[{\"id\":\"profile-a\",\"switches\":{\"visibilityRule\":\"either\","
            "\"initialStateA\":false,\"initialStateB\":true,"
            "\"switchA\":{\"mode\":\"toggle\",\"toggleKey\":{\"device\":\"keyboard\",\"code\":30,"
            "\"extended\":false,\"modifiers\":\"" +
