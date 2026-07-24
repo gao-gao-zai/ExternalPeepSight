@@ -51,6 +51,22 @@ tests/                         .NET 单元测试
 .\build.ps1 -Configuration Release
 ```
 
+生成第一版 Windows x64 便携发布包：
+
+```powershell
+.\publish.ps1
+```
+
+默认输出到 `artifacts\release\ExternalPeepSight-v0.1.0-win-x64`，包内入口为
+`app\ExternalPeepSight.UI.exe`。发布脚本会执行完整质量门禁、编译 Release Host、
+执行 .NET self-contained publish，并将 x64 MSVC 运行库放入同一目录。
+
+只在已经完成质量门禁、需要重复生成发布包时跳过检查：
+
+```powershell
+.\publish.ps1 -SkipChecks
+```
+
 只构建托管项目：
 
 ```powershell
