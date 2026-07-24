@@ -41,6 +41,8 @@
   <data name="Common.Apply" xml:space="preserve"><value>应用</value></data>
   <data name="Common.Position" xml:space="preserve"><value>位置</value></data>
   <data name="Crosshair.Preview" xml:space="preserve"><value>实时预览</value></data>
+  <data name="Crosshair.TabOverlay" xml:space="preserve"><value>准星与图像</value></data>
+  <data name="Crosshair.TabSwitches" xml:space="preserve"><value>逻辑开关与快捷键</value></data>
   <data name="Crosshair.CenterPoint" xml:space="preserve"><value>中心点</value></data>
   <data name="Crosshair.CenterVisible" xml:space="preserve"><value>显示中心点</value></data>
   <data name="Crosshair.CenterRadius" xml:space="preserve"><value>中心点半径（px）</value></data>
@@ -93,7 +95,7 @@
   <data name="Hotkey.EnableKey" xml:space="preserve"><value>开启按键</value></data>
   <data name="Hotkey.DisableKey" xml:space="preserve"><value>关闭按键</value></data>
   <data name="Hotkey.HoldKey" xml:space="preserve"><value>按住按键</value></data>
-  <data name="Hotkey.Capture" xml:space="preserve"><value>单击后按下组合键</value></data>
+  <data name="Hotkey.Capture" xml:space="preserve"><value>单击后按下按键或鼠标键</value></data>
   <data name="Hotkey.Conflict" xml:space="preserve"><value>该快捷键与其他有效绑定冲突。</value></data>
   <data name="Hotkey.Unsupported" xml:space="preserve"><value>不支持该物理按键。</value></data>
   <data name="Profiles.Sets" xml:space="preserve"><value>配置集</value></data>

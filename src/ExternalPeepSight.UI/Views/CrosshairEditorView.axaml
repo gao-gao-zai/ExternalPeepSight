@@ -3,9 +3,63 @@
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:ExternalPeepSight.UI.Controls"
+    xmlns:core="using:ExternalPeepSight.Core"
     xmlns:fa="using:FluentAvalonia.UI.Controls"
+    xmlns:views="using:ExternalPeepSight.UI.Views"
     xmlns:vm="using:ExternalPeepSight.UI.ViewModels"
     x:DataType="vm:CrosshairEditorViewModel">
+    <UserControl.Styles>
+        <Style Selector="TabControl.editor-tabs">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="TabStripPlacement" Value="Top" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="TabItem.editor-tab">
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+            <Setter Property="BorderThickness" Value="0,0,0,2" />
+            <Setter Property="Foreground" Value="{DynamicResource AppSecondaryTextBrush}" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="3,3,0,0"
+                        Padding="{TemplateBinding Padding}">
+                        <ContentPresenter
+                            Content="{TemplateBinding Header}"
+                            ContentTemplate="{TemplateBinding HeaderTemplate}"
+                            HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="TabItem.editor-tab:pointerover">
+            <Setter Property="Background" Value="{DynamicResource AppHoverBrush}" />
+        </Style>
+        <Style Selector="TabItem.editor-tab:selected">
+            <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+    </UserControl.Styles>
+    <UserControl.DataTemplates>
+        <DataTemplate DataType="vm:HotkeyEditorViewModel">
+            <views:HotkeyEditorView />
+        </DataTemplate>
+    </UserControl.DataTemplates>
     <Grid Margin="24" RowDefinitions="Auto,16,*">
         <TextBlock Classes="page-title" Text="{DynamicResource Loc.Navigation.Crosshair}" />
         <Grid Grid.Row="2" ColumnDefinitions="*,20,420">
@@ -16,232 +70,423 @@
                         Grid.Row="2"
                         MinWidth="300"
                         MinHeight="440"
-                        Crosshair="{Binding Preview}" />
+                        Crosshair="{Binding Preview}"
+                        IsVisible="{Binding IsCrosshairMode}" />
+                    <Grid
+                        Grid.Row="2"
+                        Background="{DynamicResource AppPreviewBrush}"
+                        IsVisible="{Binding IsImageMode}">
+                        <Image
+                            Margin="20"
+                            IsVisible="{Binding Image.HasRasterPreview}"
+                            Source="{Binding Image.PreviewBitmap}"
+                            Stretch="Uniform" />
+                        <StackPanel
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            IsVisible="{Binding !Image.HasRasterPreview}"
+                            Spacing="10">
+                            <TextBlock
+                                HorizontalAlignment="Center"
+                                FontFamily="Segoe Fluent Icons"
+                                FontSize="42"
+                                Foreground="#D9E0E5"
+                                Text="&#xEB9F;" />
+                            <TextBlock
+                                MaxWidth="300"
+                                Foreground="#D9E0E5"
+                                Text="{Binding Image.AssetDetails}"
+                                TextAlignment="Center"
+                                TextWrapping="Wrap" />
+                            <TextBlock
+                                MaxWidth="300"
+                                Foreground="#98A4AD"
+                                IsVisible="{Binding Image.HasAsset}"
+                                Text="{DynamicResource Loc.Image.PreviewUnavailable}"
+                                TextAlignment="Center"
+                                TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Grid>
                 </Grid>
             </Border>
 
-            <Border Grid.Column="2" Classes="surface" Padding="20">
-                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel>
-                        <Border Classes="inspector-section">
-                            <StackPanel Spacing="12">
-                                <TextBlock Classes="section-title" Text="{DynamicResource Loc.Common.Mode}" />
-                                <Grid ColumnDefinitions="*,8,*">
-                                    <RadioButton
-                                        Classes="segment"
-                                        Content="{DynamicResource Loc.Common.Crosshair}"
-                                        GroupName="CrosshairMode"
-                                        IsChecked="{Binding IsCrosshairMode, Mode=TwoWay}" />
-                                    <RadioButton
-                                        Grid.Column="2"
-                                        Classes="segment"
-                                        Content="{DynamicResource Loc.Common.Image}"
-                                        GroupName="CrosshairMode"
-                                        IsEnabled="{Binding CanActivateImage}"
-                                        IsChecked="{Binding IsImageMode, Mode=TwoWay}" />
-                                </Grid>
-                            </StackPanel>
-                        </Border>
-
-                        <Border Classes="inspector-section">
-                            <StackPanel Spacing="12">
-                                <TextBlock Classes="section-title" Text="{DynamicResource Loc.Common.Position}" />
-                                <Grid ColumnDefinitions="128,*">
-                                    <TextBlock Classes="field-label" Text="{DynamicResource Loc.Common.Anchor}" />
-                                    <Grid Grid.Column="1" ColumnDefinitions="*,8,*">
+            <Border Grid.Column="2" Classes="surface" Padding="16">
+                <TabControl
+                    Classes="editor-tabs"
+                    SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}">
+                    <TabItem
+                        Classes="editor-tab"
+                        Header="{DynamicResource Loc.Crosshair.TabOverlay}">
+                        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel>
+                            <Border Classes="inspector-section">
+                                <StackPanel Spacing="12">
+                                    <TextBlock Classes="section-title" Text="{DynamicResource Loc.Common.Mode}" />
+                                    <Grid ColumnDefinitions="*,8,*">
                                         <RadioButton
                                             Classes="segment"
-                                            Content="{DynamicResource Loc.Common.ScreenCenter}"
-                                            GroupName="CrosshairAnchor"
-                                            IsChecked="{Binding IsScreenCenterAnchor, Mode=TwoWay}" />
+                                            Content="{DynamicResource Loc.Common.Crosshair}"
+                                            GroupName="OverlayMode"
+                                            IsChecked="{Binding IsCrosshairMode, Mode=TwoWay}" />
                                         <RadioButton
                                             Grid.Column="2"
                                             Classes="segment"
-                                            Content="{DynamicResource Loc.Common.TopLeft}"
-                                            GroupName="CrosshairAnchor"
-                                            IsChecked="{Binding IsTopLeftAnchor, Mode=TwoWay}" />
+                                            Content="{DynamicResource Loc.Common.Image}"
+                                            GroupName="OverlayMode"
+                                            IsEnabled="{Binding Image.CanActivateImage}"
+                                            IsChecked="{Binding IsImageMode, Mode=TwoWay}" />
                                     </Grid>
-                                </Grid>
-                                <Grid ColumnDefinitions="128,*,10,96">
-                                    <TextBlock Classes="field-label" Text="{DynamicResource Loc.Common.OffsetX}" />
-                                    <Slider
-                                        Grid.Column="1"
-                                        Classes="inspector-slider"
-                                        Minimum="-1000"
-                                        Maximum="1000"
-                                        Value="{Binding OffsetX, Mode=TwoWay}" />
-                                    <fa:FANumberBox
-                                        Grid.Column="3"
-                                        Minimum="-100000"
-                                        Maximum="100000"
-                                        Value="{Binding OffsetX, Mode=TwoWay}" />
-                                </Grid>
-                                <Grid ColumnDefinitions="128,*,10,96">
-                                    <TextBlock Classes="field-label" Text="{DynamicResource Loc.Common.OffsetY}" />
-                                    <Slider
-                                        Grid.Column="1"
-                                        Classes="inspector-slider"
-                                        Minimum="-1000"
-                                        Maximum="1000"
-                                        Value="{Binding OffsetY, Mode=TwoWay}" />
-                                    <fa:FANumberBox
-                                        Grid.Column="3"
-                                        Minimum="-100000"
-                                        Maximum="100000"
-                                        Value="{Binding OffsetY, Mode=TwoWay}" />
-                                </Grid>
-                            </StackPanel>
-                        </Border>
+                                </StackPanel>
+                            </Border>
 
-                        <Border Classes="inspector-section">
-                            <StackPanel Spacing="12">
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <TextBlock
-                                        VerticalAlignment="Center"
-                                        Classes="section-title"
-                                        Text="{DynamicResource Loc.Crosshair.CenterPoint}" />
-                                    <CheckBox
-                                        Grid.Column="1"
-                                        Content="{DynamicResource Loc.Crosshair.CenterVisible}"
-                                        IsChecked="{Binding CenterVisible, Mode=TwoWay}" />
-                                </Grid>
-                                <Grid ColumnDefinitions="128,*,10,96">
-                                    <TextBlock Classes="field-label" Text="{DynamicResource Loc.Crosshair.CenterRadius}" />
-                                    <Slider
-                                        Grid.Column="1"
-                                        Classes="inspector-slider"
-                                        Maximum="100"
-                                        Minimum="0"
-                                        TickFrequency="1"
-                                        Value="{Binding CenterRadius, Mode=TwoWay}" />
-                                    <fa:FANumberBox
-                                        Grid.Column="3"
-                                        Maximum="1000"
-                                        Minimum="0"
-                                        Value="{Binding CenterRadius, Mode=TwoWay}" />
-                                </Grid>
-                                <Grid ColumnDefinitions="128,*">
-                                    <TextBlock Classes="field-label" Text="{DynamicResource Loc.Common.Color}" />
-                                    <controls:ColorField
-                                        Grid.Column="1"
-                                        Color="{Binding CenterColor, Mode=TwoWay}"
-                                        Hex="{Binding CenterHex, Mode=TwoWay}" />
-                                </Grid>
-                            </StackPanel>
-                        </Border>
+                            <StackPanel IsVisible="{Binding IsCrosshairMode}">
+                                <Border Classes="inspector-section">
+                                    <StackPanel Spacing="12">
+                                        <TextBlock Classes="section-title" Text="{DynamicResource Loc.Common.Position}" />
+                                        <Grid ColumnDefinitions="128,*">
+                                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Common.Anchor}" />
+                                            <Grid Grid.Column="1" ColumnDefinitions="*,8,*">
+                                                <RadioButton
+                                                    Classes="segment"
+                                                    Content="{DynamicResource Loc.Common.ScreenCenter}"
+                                                    GroupName="CrosshairAnchor"
+                                                    IsChecked="{Binding IsScreenCenterAnchor, Mode=TwoWay}" />
+                                                <RadioButton
+                                                    Grid.Column="2"
+                                                    Classes="segment"
+                                                    Content="{DynamicResource Loc.Common.TopLeft}"
+                                                    GroupName="CrosshairAnchor"
+                                                    IsChecked="{Binding IsTopLeftAnchor, Mode=TwoWay}" />
+                                            </Grid>
+                                        </Grid>
+                                        <Grid ColumnDefinitions="128,*,10,96">
+                                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Common.OffsetX}" />
+                                            <Slider
+                                                Grid.Column="1"
+                                                Classes="inspector-slider"
+                                                Minimum="-1000"
+                                                Maximum="1000"
+                                                Value="{Binding OffsetX, Mode=TwoWay}" />
+                                            <fa:FANumberBox
+                                                Grid.Column="3"
+                                                Minimum="-100000"
+                                                Maximum="100000"
+                                                Value="{Binding OffsetX, Mode=TwoWay}" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="128,*,10,96">
+                                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Common.OffsetY}" />
+                                            <Slider
+                                                Grid.Column="1"
+                                                Classes="inspector-slider"
+                                                Minimum="-1000"
+                                                Maximum="1000"
+                                                Value="{Binding OffsetY, Mode=TwoWay}" />
+                                            <fa:FANumberBox
+                                                Grid.Column="3"
+                                                Minimum="-100000"
+                                                Maximum="100000"
+                                                Value="{Binding OffsetY, Mode=TwoWay}" />
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
 
-                        <Border Classes="inspector-section last">
-                            <StackPanel Spacing="12">
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <TextBlock
-                                        VerticalAlignment="Center"
-                                        Classes="section-title"
-                                        Text="{DynamicResource Loc.Crosshair.Arms}" />
-                                    <CheckBox
-                                        Grid.Column="1"
-                                        Content="{DynamicResource Loc.Crosshair.LinkArms}"
-                                        IsChecked="{Binding Linked, Mode=TwoWay}"
-                                        ToolTip.Tip="{DynamicResource Loc.Crosshair.Linked}" />
-                                </Grid>
-                                <Grid ColumnDefinitions="*,8,*,8,*,8,*">
-                                    <RadioButton
-                                        Classes="segment"
-                                        Content="{DynamicResource Loc.Crosshair.ArmTop}"
-                                        GroupName="CrosshairArm"
-                                        IsChecked="{Binding IsTopArmSelected, Mode=TwoWay}" />
-                                    <RadioButton
-                                        Grid.Column="2"
-                                        Classes="segment"
-                                        Content="{DynamicResource Loc.Crosshair.ArmRight}"
-                                        GroupName="CrosshairArm"
-                                        IsChecked="{Binding IsRightArmSelected, Mode=TwoWay}" />
-                                    <RadioButton
-                                        Grid.Column="4"
-                                        Classes="segment"
-                                        Content="{DynamicResource Loc.Crosshair.ArmBottom}"
-                                        GroupName="CrosshairArm"
-                                        IsChecked="{Binding IsBottomArmSelected, Mode=TwoWay}" />
-                                    <RadioButton
-                                        Grid.Column="6"
-                                        Classes="segment"
-                                        Content="{DynamicResource Loc.Crosshair.ArmLeft}"
-                                        GroupName="CrosshairArm"
-                                        IsChecked="{Binding IsLeftArmSelected, Mode=TwoWay}" />
-                                </Grid>
-                                <Grid ColumnDefinitions="128,*">
-                                    <TextBlock Classes="field-label" Text="{DynamicResource Loc.Crosshair.ArmVisible}" />
-                                    <CheckBox
-                                        Grid.Column="1"
-                                        HorizontalAlignment="Right"
-                                        IsChecked="{Binding ArmVisible, Mode=TwoWay}" />
-                                </Grid>
-                                <Grid ColumnDefinitions="128,*,10,96">
-                                    <TextBlock Classes="field-label" Text="{DynamicResource Loc.Crosshair.Angle}" />
-                                    <Slider
-                                        Grid.Column="1"
-                                        Classes="inspector-slider"
-                                        Maximum="360"
-                                        Minimum="-360"
-                                        Value="{Binding ArmAngle, Mode=TwoWay}" />
-                                    <fa:FANumberBox
-                                        Grid.Column="3"
-                                        Maximum="360"
-                                        Minimum="-360"
-                                        Value="{Binding ArmAngle, Mode=TwoWay}" />
-                                </Grid>
-                                <Grid ColumnDefinitions="128,*,10,96">
-                                    <TextBlock Classes="field-label" Text="{DynamicResource Loc.Crosshair.Gap}" />
-                                    <Slider
-                                        Grid.Column="1"
-                                        Classes="inspector-slider"
-                                        Maximum="100"
-                                        Minimum="0"
-                                        Value="{Binding ArmGap, Mode=TwoWay}" />
-                                    <fa:FANumberBox
-                                        Grid.Column="3"
-                                        Maximum="10000"
-                                        Minimum="0"
-                                        Value="{Binding ArmGap, Mode=TwoWay}" />
-                                </Grid>
-                                <Grid ColumnDefinitions="128,*,10,96">
-                                    <TextBlock Classes="field-label" Text="{DynamicResource Loc.Crosshair.Length}" />
-                                    <Slider
-                                        Grid.Column="1"
-                                        Classes="inspector-slider"
-                                        Maximum="200"
-                                        Minimum="0"
-                                        Value="{Binding ArmLength, Mode=TwoWay}" />
-                                    <fa:FANumberBox
-                                        Grid.Column="3"
-                                        Maximum="10000"
-                                        Minimum="0"
-                                        Value="{Binding ArmLength, Mode=TwoWay}" />
-                                </Grid>
-                                <Grid ColumnDefinitions="128,*,10,96">
-                                    <TextBlock Classes="field-label" Text="{DynamicResource Loc.Crosshair.Width}" />
-                                    <Slider
-                                        Grid.Column="1"
-                                        Classes="inspector-slider"
-                                        Maximum="40"
-                                        Minimum="1"
-                                        Value="{Binding ArmWidth, Mode=TwoWay}" />
-                                    <fa:FANumberBox
-                                        Grid.Column="3"
-                                        Maximum="1000"
-                                        Minimum="1"
-                                        Value="{Binding ArmWidth, Mode=TwoWay}" />
-                                </Grid>
-                                <Grid ColumnDefinitions="128,*">
-                                    <TextBlock Classes="field-label" Text="{DynamicResource Loc.Common.Color}" />
-                                    <controls:ColorField
-                                        Grid.Column="1"
-                                        Color="{Binding ArmColor, Mode=TwoWay}"
-                                        Hex="{Binding ArmHex, Mode=TwoWay}" />
-                                </Grid>
+                                <Border Classes="inspector-section">
+                                    <StackPanel Spacing="12">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <TextBlock
+                                                VerticalAlignment="Center"
+                                                Classes="section-title"
+                                                Text="{DynamicResource Loc.Crosshair.CenterPoint}" />
+                                            <CheckBox
+                                                Grid.Column="1"
+                                                Content="{DynamicResource Loc.Crosshair.CenterVisible}"
+                                                IsChecked="{Binding CenterVisible, Mode=TwoWay}" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="128,*,10,96">
+                                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Crosshair.CenterRadius}" />
+                                            <Slider
+                                                Grid.Column="1"
+                                                Classes="inspector-slider"
+                                                Maximum="100"
+                                                Minimum="0"
+                                                TickFrequency="1"
+                                                Value="{Binding CenterRadius, Mode=TwoWay}" />
+                                            <fa:FANumberBox
+                                                Grid.Column="3"
+                                                Maximum="1000"
+                                                Minimum="0"
+                                                Value="{Binding CenterRadius, Mode=TwoWay}" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="128,*">
+                                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Common.Color}" />
+                                            <controls:ColorField
+                                                Grid.Column="1"
+                                                Color="{Binding CenterColor, Mode=TwoWay}"
+                                                Hex="{Binding CenterHex, Mode=TwoWay}" />
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Classes="inspector-section last">
+                                    <StackPanel Spacing="12">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <TextBlock
+                                                VerticalAlignment="Center"
+                                                Classes="section-title"
+                                                Text="{DynamicResource Loc.Crosshair.Arms}" />
+                                            <CheckBox
+                                                Grid.Column="1"
+                                                Content="{DynamicResource Loc.Crosshair.LinkArms}"
+                                                IsChecked="{Binding Linked, Mode=TwoWay}"
+                                                ToolTip.Tip="{DynamicResource Loc.Crosshair.Linked}" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*,8,*,8,*,8,*">
+                                            <RadioButton
+                                                Classes="segment"
+                                                Content="{DynamicResource Loc.Crosshair.ArmTop}"
+                                                GroupName="CrosshairArm"
+                                                IsChecked="{Binding IsTopArmSelected, Mode=TwoWay}" />
+                                            <RadioButton
+                                                Grid.Column="2"
+                                                Classes="segment"
+                                                Content="{DynamicResource Loc.Crosshair.ArmRight}"
+                                                GroupName="CrosshairArm"
+                                                IsChecked="{Binding IsRightArmSelected, Mode=TwoWay}" />
+                                            <RadioButton
+                                                Grid.Column="4"
+                                                Classes="segment"
+                                                Content="{DynamicResource Loc.Crosshair.ArmBottom}"
+                                                GroupName="CrosshairArm"
+                                                IsChecked="{Binding IsBottomArmSelected, Mode=TwoWay}" />
+                                            <RadioButton
+                                                Grid.Column="6"
+                                                Classes="segment"
+                                                Content="{DynamicResource Loc.Crosshair.ArmLeft}"
+                                                GroupName="CrosshairArm"
+                                                IsChecked="{Binding IsLeftArmSelected, Mode=TwoWay}" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="128,*">
+                                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Crosshair.ArmVisible}" />
+                                            <CheckBox
+                                                Grid.Column="1"
+                                                HorizontalAlignment="Right"
+                                                IsChecked="{Binding ArmVisible, Mode=TwoWay}" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="128,*,10,96">
+                                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Crosshair.Angle}" />
+                                            <Slider
+                                                Grid.Column="1"
+                                                Classes="inspector-slider"
+                                                Maximum="360"
+                                                Minimum="-360"
+                                                Value="{Binding ArmAngle, Mode=TwoWay}" />
+                                            <fa:FANumberBox
+                                                Grid.Column="3"
+                                                Maximum="360"
+                                                Minimum="-360"
+                                                Value="{Binding ArmAngle, Mode=TwoWay}" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="128,*,10,96">
+                                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Crosshair.Gap}" />
+                                            <Slider
+                                                Grid.Column="1"
+                                                Classes="inspector-slider"
+                                                Maximum="100"
+                                                Minimum="0"
+                                                Value="{Binding ArmGap, Mode=TwoWay}" />
+                                            <fa:FANumberBox
+                                                Grid.Column="3"
+                                                Maximum="10000"
+                                                Minimum="0"
+                                                Value="{Binding ArmGap, Mode=TwoWay}" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="128,*,10,96">
+                                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Crosshair.Length}" />
+                                            <Slider
+                                                Grid.Column="1"
+                                                Classes="inspector-slider"
+                                                Maximum="200"
+                                                Minimum="0"
+                                                Value="{Binding ArmLength, Mode=TwoWay}" />
+                                            <fa:FANumberBox
+                                                Grid.Column="3"
+                                                Maximum="10000"
+                                                Minimum="0"
+                                                Value="{Binding ArmLength, Mode=TwoWay}" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="128,*,10,96">
+                                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Crosshair.Width}" />
+                                            <Slider
+                                                Grid.Column="1"
+                                                Classes="inspector-slider"
+                                                Maximum="40"
+                                                Minimum="1"
+                                                Value="{Binding ArmWidth, Mode=TwoWay}" />
+                                            <fa:FANumberBox
+                                                Grid.Column="3"
+                                                Maximum="1000"
+                                                Minimum="1"
+                                                Value="{Binding ArmWidth, Mode=TwoWay}" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="128,*">
+                                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Common.Color}" />
+                                            <controls:ColorField
+                                                Grid.Column="1"
+                                                Color="{Binding ArmColor, Mode=TwoWay}"
+                                                Hex="{Binding ArmHex, Mode=TwoWay}" />
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
-                        </Border>
-                    </StackPanel>
-                </ScrollViewer>
+
+                            <StackPanel IsVisible="{Binding IsImageMode}">
+                                <Border Classes="inspector-section">
+                                    <StackPanel Spacing="12">
+                                        <TextBlock Classes="section-title" Text="{DynamicResource Loc.Image.Asset}" />
+                                        <Grid ColumnDefinitions="*,8,34">
+                                            <ComboBox
+                                                ItemsSource="{Binding Image.Assets}"
+                                                SelectedItem="{Binding Image.SelectedAsset, Mode=TwoWay}">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate x:DataType="core:AssetReference">
+                                                        <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                            <Button
+                                                Grid.Column="2"
+                                                Classes="icon"
+                                                Command="{Binding Image.ImportImageCommand}"
+                                                Content="&#xE8B7;"
+                                                ToolTip.Tip="{DynamicResource Loc.Image.ImportAsset}" />
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                                <Border Classes="inspector-section last">
+                                    <StackPanel Spacing="12">
+                                        <TextBlock Classes="section-title" Text="{DynamicResource Loc.Common.Position}" />
+                                        <Grid ColumnDefinitions="128,*">
+                                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Common.Anchor}" />
+                                            <Grid Grid.Column="1" ColumnDefinitions="*,8,*">
+                                                <RadioButton
+                                                    Classes="segment"
+                                                    Content="{DynamicResource Loc.Common.ScreenCenter}"
+                                                    GroupName="ImageAnchor"
+                                                    IsChecked="{Binding Image.IsScreenCenterAnchor, Mode=TwoWay}" />
+                                                <RadioButton
+                                                    Grid.Column="2"
+                                                    Classes="segment"
+                                                    Content="{DynamicResource Loc.Common.TopLeft}"
+                                                    GroupName="ImageAnchor"
+                                                    IsChecked="{Binding Image.IsTopLeftAnchor, Mode=TwoWay}" />
+                                            </Grid>
+                                        </Grid>
+                                        <Grid ColumnDefinitions="128,*,10,96">
+                                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Common.OffsetX}" />
+                                            <Slider
+                                                Grid.Column="1"
+                                                Classes="inspector-slider"
+                                                Minimum="-1000"
+                                                Maximum="1000"
+                                                Value="{Binding Image.OffsetX, Mode=TwoWay}" />
+                                            <fa:FANumberBox
+                                                Grid.Column="3"
+                                                Minimum="-100000"
+                                                Maximum="100000"
+                                                Value="{Binding Image.OffsetX, Mode=TwoWay}" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="128,*,10,96">
+                                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Common.OffsetY}" />
+                                            <Slider
+                                                Grid.Column="1"
+                                                Classes="inspector-slider"
+                                                Minimum="-1000"
+                                                Maximum="1000"
+                                                Value="{Binding Image.OffsetY, Mode=TwoWay}" />
+                                            <fa:FANumberBox
+                                                Grid.Column="3"
+                                                Minimum="-100000"
+                                                Maximum="100000"
+                                                Value="{Binding Image.OffsetY, Mode=TwoWay}" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="128,*,10,96">
+                                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Image.Scale}" />
+                                            <Slider
+                                                Grid.Column="1"
+                                                Classes="inspector-slider"
+                                                Minimum="0.01"
+                                                Maximum="5"
+                                                Value="{Binding Image.Scale, Mode=TwoWay}" />
+                                            <fa:FANumberBox
+                                                Grid.Column="3"
+                                                Minimum="0.01"
+                                                Maximum="100"
+                                                SmallChange="0.05"
+                                                Value="{Binding Image.Scale, Mode=TwoWay}" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="128,*">
+                                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Image.KeepAspect}" />
+                                            <CheckBox
+                                                Grid.Column="1"
+                                                HorizontalAlignment="Right"
+                                                IsChecked="{Binding Image.KeepAspectRatio, Mode=TwoWay}" />
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
+
+                    <TabItem
+                        Classes="editor-tab"
+                        Header="{DynamicResource Loc.Crosshair.TabSwitches}">
+                        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel Spacing="16">
+                            <Border Classes="inspector-section">
+                                <Grid ColumnDefinitions="*,28,*">
+                                    <StackPanel Spacing="10">
+                                        <TextBlock Classes="section-title" Text="{DynamicResource Loc.Switch.VisibilityRule}" />
+                                        <ComboBox
+                                            x:CompileBindings="False"
+                                            ItemsSource="{Binding Switches.VisibilityRules}"
+                                            DisplayMemberBinding="{Binding Name}"
+                                            SelectedValue="{Binding Switches.VisibilityRule, Mode=TwoWay}"
+                                            SelectedValueBinding="{Binding Value}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Spacing="8">
+                                        <TextBlock Classes="section-title" Text="{DynamicResource Loc.Switch.InitialState}" />
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Switch.SwitchA}" />
+                                            <CheckBox
+                                                Grid.Column="1"
+                                                IsChecked="{Binding Switches.InitialStateA, Mode=TwoWay}" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Switch.SwitchB}" />
+                                            <CheckBox
+                                                Grid.Column="1"
+                                                IsChecked="{Binding Switches.InitialStateB, Mode=TwoWay}" />
+                                        </Grid>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                            <Border Classes="inspector-section">
+                                <StackPanel Spacing="12">
+                                    <TextBlock Classes="section-title" Text="{DynamicResource Loc.Switch.SwitchA}" />
+                                    <ContentControl Content="{Binding Switches.SwitchA}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Classes="inspector-section last">
+                                <StackPanel Spacing="12">
+                                    <TextBlock Classes="section-title" Text="{DynamicResource Loc.Switch.SwitchB}" />
+                                    <ContentControl Content="{Binding Switches.SwitchB}" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
+                </TabControl>
             </Border>
         </Grid>
     </Grid>

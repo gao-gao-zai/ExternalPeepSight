@@ -16,17 +16,21 @@ namespace
 using external_peepsight::HotkeyStateMachine;
 using external_peepsight::InputActivationMode;
 using external_peepsight::InputConfiguration;
+using external_peepsight::InputDeviceKind;
 using external_peepsight::InputHotkeyBinding;
 using external_peepsight::InputKeyIdentity;
 using external_peepsight::InputLogicalSwitch;
 using external_peepsight::InputModifiers;
+using external_peepsight::InputMouseButton;
 using external_peepsight::InputSwitchOperation;
 using external_peepsight::InputVisibilityRule;
 using external_peepsight::RawInputBinding;
 
-constexpr InputKeyIdentity kKeyA{0x1EU, false, InputModifiers::none};
-constexpr InputKeyIdentity kKeyB{0x30U, false, InputModifiers::none};
-constexpr InputKeyIdentity kCtrlKeyA{0x1EU, false, InputModifiers::ctrl};
+constexpr InputKeyIdentity kKeyA{InputDeviceKind::keyboard, 0x1EU, false, InputModifiers::none};
+constexpr InputKeyIdentity kKeyB{InputDeviceKind::keyboard, 0x30U, false, InputModifiers::none};
+constexpr InputKeyIdentity kCtrlKeyA{InputDeviceKind::keyboard, 0x1EU, false, InputModifiers::ctrl};
+constexpr InputKeyIdentity kMouseX1{InputDeviceKind::mouse, static_cast<std::uint16_t>(InputMouseButton::x1), false,
+                                    InputModifiers::none};
 
 struct InputWindowSearch
 {
@@ -81,14 +85,22 @@ BOOL CALLBACK find_input_window(_In_ const HWND window, _In_ const LPARAM parame
     return {InputActivationMode::hold, std::nullopt, std::nullopt, std::nullopt, key};
 }
 
-[[nodiscard]] std::string valid_snapshot(const std::string_view modifiers = "none")
+[[nodiscard]] std::string valid_snapshot(const std::string_view modifiers = "none",
+                                         const std::string_view selected_profile_id = "profile-a")
 {
-    return "{\"switches\":{\"visibilityRule\":\"either\",\"initialStateA\":false,\"initialStateB\":true,"
-           "\"switchA\":{\"mode\":\"toggle\",\"toggleKey\":{\"scanCode\":30,\"extended\":false,\"modifiers\":\"" +
+    return "{\"schemaVersion\":3,\"profiles\":[{\"id\":\"profile-a\",\"switches\":{\"visibilityRule\":\"either\","
+           "\"initialStateA\":false,\"initialStateB\":true,"
+           "\"switchA\":{\"mode\":\"toggle\",\"toggleKey\":{\"device\":\"keyboard\",\"code\":30,"
+           "\"extended\":false,\"modifiers\":\"" +
            std::string(modifiers) +
            "\"},\"enableKey\":null,\"disableKey\":null,\"holdKey\":null},"
            "\"switchB\":{\"mode\":\"unbound\",\"toggleKey\":null,\"enableKey\":null,\"disableKey\":null,"
-           "\"holdKey\":null}}}";
+           "\"holdKey\":null}}},{\"id\":\"profile-b\",\"switches\":{\"visibilityRule\":\"both\","
+           "\"initialStateA\":true,\"initialStateB\":true,"
+           "\"switchA\":{\"mode\":\"unbound\",\"toggleKey\":null,\"enableKey\":null,\"disableKey\":null,"
+           "\"holdKey\":null},\"switchB\":{\"mode\":\"unbound\",\"toggleKey\":null,\"enableKey\":null,"
+           "\"disableKey\":null,\"holdKey\":null}}}],\"profileSets\":[{\"selectedProfileId\":\"" +
+           std::string(selected_profile_id) + "\"}]}";
 }
 
 TEST(HotkeyStateMachine, ToggleChangesOnceAndSuppressesRepeatedKeyDown)
@@ -105,6 +117,26 @@ TEST(HotkeyStateMachine, ToggleChangesOnceAndSuppressesRepeatedKeyDown)
     ASSERT_TRUE(first.has_value());
     EXPECT_TRUE(first->switch_a);
     EXPECT_FALSE(repeated.has_value());
+}
+
+TEST(HotkeyStateMachine, MouseToggleUsesTheSameRepeatAndReleaseRules)
+{
+    HotkeyStateMachine state_machine;
+    InputConfiguration configuration = unbound_configuration();
+    configuration.switch_a = toggle_binding(kMouseX1);
+    static_cast<void>(
+        state_machine.configure(configuration, {{kMouseX1, {InputLogicalSwitch::a, InputSwitchOperation::toggle}}}));
+
+    const auto pressed = state_machine.handle_key(kMouseX1, true);
+    const auto repeated = state_machine.handle_key(kMouseX1, true);
+    static_cast<void>(state_machine.handle_key(kMouseX1, false));
+    const auto pressed_again = state_machine.handle_key(kMouseX1, true);
+
+    ASSERT_TRUE(pressed.has_value());
+    EXPECT_TRUE(pressed->switch_a);
+    EXPECT_FALSE(repeated.has_value());
+    ASSERT_TRUE(pressed_again.has_value());
+    EXPECT_FALSE(pressed_again->switch_a);
 }
 
 TEST(HotkeyStateMachine, IndependentBindingsEnableAndDisableTheirSwitch)
@@ -134,7 +166,7 @@ TEST(HotkeyStateMachine, HoldClearsOnKeyUpEvenAfterModifierStateChanges)
 
     const auto pressed = state_machine.handle_key(kCtrlKeyA, true);
     const auto released =
-        state_machine.handle_key({kCtrlKeyA.scan_code, kCtrlKeyA.extended, InputModifiers::none}, false);
+        state_machine.handle_key({kCtrlKeyA.device, kCtrlKeyA.code, kCtrlKeyA.extended, InputModifiers::none}, false);
 
     ASSERT_TRUE(pressed.has_value());
     EXPECT_TRUE(pressed->switch_a);
@@ -213,11 +245,49 @@ TEST(InputBindingPlan, AssignsModifiedActionsToRegisterHotKeyAndBareOrHoldAction
     EXPECT_EQ(kKeyB, plan.raw_bindings.front().key);
 }
 
+TEST(InputBindingPlan, AssignsMouseBindingsToRawInputEvenWithModifiers)
+{
+    InputConfiguration configuration = unbound_configuration();
+    configuration.switch_a = toggle_binding(
+        {InputDeviceKind::mouse, static_cast<std::uint16_t>(InputMouseButton::right), false, InputModifiers::ctrl});
+
+    const auto plan = external_peepsight::build_input_binding_plan(configuration);
+
+    ASSERT_EQ(1U, plan.raw_bindings.size());
+    EXPECT_TRUE(plan.registered_hotkeys.empty());
+}
+
+TEST(InputBindingPlan, RejectsInvalidMouseButtonCodesAndKeyboardExtendedFlag)
+{
+    InputConfiguration zero_code = unbound_configuration();
+    zero_code.switch_a = toggle_binding({InputDeviceKind::mouse, 0U, false, InputModifiers::none});
+    InputConfiguration out_of_range_code = unbound_configuration();
+    out_of_range_code.switch_a = toggle_binding({InputDeviceKind::mouse, 6U, false, InputModifiers::none});
+    InputConfiguration extended_mouse = unbound_configuration();
+    extended_mouse.switch_a = toggle_binding(
+        {InputDeviceKind::mouse, static_cast<std::uint16_t>(InputMouseButton::left), true, InputModifiers::none});
+
+    EXPECT_THROW(static_cast<void>(external_peepsight::build_input_binding_plan(zero_code)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(external_peepsight::build_input_binding_plan(out_of_range_code)),
+                 std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(external_peepsight::build_input_binding_plan(extended_mouse)),
+                 std::invalid_argument);
+}
+
 TEST(InputBindingPlan, RejectsDuplicateBindingsAcrossSwitches)
 {
     InputConfiguration configuration = unbound_configuration();
     configuration.switch_a = toggle_binding(kKeyA);
     configuration.switch_b = hold_binding(kKeyA);
+
+    EXPECT_THROW(static_cast<void>(external_peepsight::build_input_binding_plan(configuration)), std::invalid_argument);
+}
+
+TEST(InputBindingPlan, RejectsDuplicateMouseBindingsAcrossSwitches)
+{
+    InputConfiguration configuration = unbound_configuration();
+    configuration.switch_a = toggle_binding(kMouseX1);
+    configuration.switch_b = hold_binding(kMouseX1);
 
     EXPECT_THROW(static_cast<void>(external_peepsight::build_input_binding_plan(configuration)), std::invalid_argument);
 }
@@ -244,13 +314,13 @@ TEST(InputBindingPlan, RejectsModeSpecificMissingAndExtraKeys)
 TEST(InputBindingPlan, RejectsSystemReservedShortcuts)
 {
     InputConfiguration win_binding = unbound_configuration();
-    win_binding.switch_a = toggle_binding({0x1EU, false, InputModifiers::win});
+    win_binding.switch_a = toggle_binding({InputDeviceKind::keyboard, 0x1EU, false, InputModifiers::win});
     InputConfiguration bare_windows_key = unbound_configuration();
-    bare_windows_key.switch_a = toggle_binding({0x5BU, true, InputModifiers::none});
+    bare_windows_key.switch_a = toggle_binding({InputDeviceKind::keyboard, 0x5BU, true, InputModifiers::none});
     InputConfiguration alt_tab = unbound_configuration();
-    alt_tab.switch_a = toggle_binding({0x0FU, false, InputModifiers::alt});
+    alt_tab.switch_a = toggle_binding({InputDeviceKind::keyboard, 0x0FU, false, InputModifiers::alt});
     InputConfiguration f12 = unbound_configuration();
-    f12.switch_a = toggle_binding({0x58U, false, InputModifiers::none});
+    f12.switch_a = toggle_binding({InputDeviceKind::keyboard, 0x58U, false, InputModifiers::none});
 
     EXPECT_THROW(static_cast<void>(external_peepsight::build_input_binding_plan(win_binding)), std::invalid_argument);
     EXPECT_THROW(static_cast<void>(external_peepsight::build_input_binding_plan(bare_windows_key)),
@@ -277,6 +347,33 @@ TEST(InputConfigurationParser, AcceptsFlagEnumFormattingAndRejectsUnknownContent
                  std::invalid_argument);
 }
 
+TEST(InputConfigurationParser, UsesSwitchesFromSelectedProfile)
+{
+    winrt::init_apartment(winrt::apartment_type::multi_threaded);
+
+    const InputConfiguration parsed =
+        external_peepsight::parse_input_configuration(valid_snapshot("none", "profile-b"));
+
+    EXPECT_EQ(InputVisibilityRule::both, parsed.visibility_rule);
+    EXPECT_TRUE(parsed.initial_state_a);
+    EXPECT_TRUE(parsed.initial_state_b);
+    EXPECT_EQ(InputActivationMode::unbound, parsed.switch_a.mode);
+}
+
+TEST(InputConfigurationParser, ParsesMouseButtonIdentity)
+{
+    winrt::init_apartment(winrt::apartment_type::multi_threaded);
+    std::string snapshot = valid_snapshot();
+    const std::string keyboard = "\"device\":\"keyboard\",\"code\":30";
+    snapshot.replace(snapshot.find(keyboard), keyboard.size(), "\"device\":\"mouse\",\"code\":4");
+
+    const InputConfiguration parsed = external_peepsight::parse_input_configuration(snapshot);
+
+    ASSERT_TRUE(parsed.switch_a.toggle_key.has_value());
+    EXPECT_EQ(InputDeviceKind::mouse, parsed.switch_a.toggle_key->device);
+    EXPECT_EQ(static_cast<std::uint16_t>(InputMouseButton::x1), parsed.switch_a.toggle_key->code);
+}
+
 TEST(RawKeyboardInput, AcceptsKeyboardPayloadSmallerThanRawInputUnion)
 {
     RAWINPUT input{};
@@ -287,12 +384,33 @@ TEST(RawKeyboardInput, AcceptsKeyboardPayloadSmallerThanRawInputUnion)
     ASSERT_LT(keyboard_payload_size, sizeof(RAWINPUT));
 
     const auto *bytes = reinterpret_cast<const std::byte *>(&input);
-    const std::optional<external_peepsight::RawKeyboardTransition> transition =
-        external_peepsight::parse_raw_keyboard_input({bytes, keyboard_payload_size});
+    const std::vector<external_peepsight::RawInputTransition> transitions =
+        external_peepsight::parse_raw_input({bytes, keyboard_payload_size});
 
-    ASSERT_TRUE(transition.has_value());
-    EXPECT_EQ((external_peepsight::InputPhysicalKey{0x31U, false}), transition->key);
-    EXPECT_TRUE(transition->pressed);
+    ASSERT_EQ(1U, transitions.size());
+    EXPECT_EQ((external_peepsight::InputPhysicalKey{InputDeviceKind::keyboard, 0x31U, false}), transitions[0].key);
+    EXPECT_TRUE(transitions[0].pressed);
+}
+
+TEST(RawMouseInput, DecodesMultipleButtonTransitions)
+{
+    RAWINPUT input{};
+    input.header.dwType = RIM_TYPEMOUSE;
+    input.data.mouse.usButtonFlags = RI_MOUSE_LEFT_BUTTON_DOWN | RI_MOUSE_BUTTON_4_UP;
+    constexpr std::size_t mouse_payload_size = offsetof(RAWINPUT, data) + sizeof(RAWMOUSE);
+
+    const auto *bytes = reinterpret_cast<const std::byte *>(&input);
+    const std::vector<external_peepsight::RawInputTransition> transitions =
+        external_peepsight::parse_raw_input({bytes, mouse_payload_size});
+
+    ASSERT_EQ(2U, transitions.size());
+    EXPECT_EQ((external_peepsight::InputPhysicalKey{InputDeviceKind::mouse,
+                                                    static_cast<std::uint16_t>(InputMouseButton::left), false}),
+              transitions[0].key);
+    EXPECT_TRUE(transitions[0].pressed);
+    EXPECT_EQ(kMouseX1.device, transitions[1].key.device);
+    EXPECT_EQ(kMouseX1.code, transitions[1].key.code);
+    EXPECT_FALSE(transitions[1].pressed);
 }
 
 TEST(GlobalInputService, StartsAppliesConfigurationAndAllowsRepeatedStop)

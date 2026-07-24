@@ -203,10 +203,32 @@ public sealed record MonitorSelection(
     FocusMonitorSource FocusSource);
 
 /// <summary>
+/// Identifies the device that produces an input binding.
+/// </summary>
+public enum InputDeviceKind
+{
+    Keyboard,
+    Mouse,
+}
+
+/// <summary>
+/// Identifies a bindable physical mouse button.
+/// </summary>
+public enum InputMouseButton : ushort
+{
+    Left = 1,
+    Right = 2,
+    Middle = 3,
+    X1 = 4,
+    X2 = 5,
+}
+
+/// <summary>
 /// Identifies a physical keyboard key independently of its display label.
 /// </summary>
 public readonly record struct KeyIdentity(
-    ushort ScanCode,
+    InputDeviceKind Device,
+    ushort Code,
     bool Extended,
     KeyModifiers Modifiers);
 
@@ -243,14 +265,15 @@ public sealed record ToastConfiguration(
     RgbaColor Background);
 
 /// <summary>
-/// Defines a saved visual configuration.
+/// Defines one saved configuration.
 /// </summary>
 public sealed record Profile(
     Guid Id,
     string Name,
     OverlayMode ActiveMode,
     Crosshair Crosshair,
-    ImageOverlay Image);
+    ImageOverlay Image,
+    SwitchConfiguration Switches);
 
 /// <summary>
 /// Defines an ordered group of profiles.
@@ -262,7 +285,7 @@ public sealed record ProfileSet(
     Guid? SelectedProfileId);
 
 /// <summary>
-/// Defines the versioned on-disk configuration document.
+/// Defines the versioned on-disk application state document.
 /// </summary>
 public sealed record ConfigurationDocument
 {
@@ -291,17 +314,6 @@ public sealed record ConfigurationDocument
     /// </summary>
     public MonitorSelection MonitorSelection { get; init; } =
         new(MonitorSelectionMode.Focus, [], FocusMonitorSource.ForegroundWindowThenMouse);
-
-    /// <summary>
-    /// Gets the logical switch configuration.
-    /// </summary>
-    public SwitchConfiguration Switches { get; init; } =
-        new(
-            VisibilityRule.SwitchA,
-            false,
-            false,
-            new HotkeyBinding(HotkeyActivationMode.Unbound, null, null, null, null),
-            new HotkeyBinding(HotkeyActivationMode.Unbound, null, null, null, null));
 
     /// <summary>
     /// Gets the toast configuration.
@@ -345,7 +357,8 @@ public static class ConfigurationDefaults
                         new CenterPoint(true, RgbaColor.White, 2),
                         arms,
                         true),
-                    new ImageOverlay(null, AnchorMode.ScreenCenter, new PixelPoint(0, 0), 1, true)),
+                    new ImageOverlay(null, AnchorMode.ScreenCenter, new PixelPoint(0, 0), 1, true),
+                    CreateSwitches()),
             ],
             ProfileSets =
             [
@@ -353,4 +366,16 @@ public static class ConfigurationDefaults
             ],
         };
     }
+
+    /// <summary>
+    /// Creates the default logical switch and hotkey configuration.
+    /// </summary>
+    /// <returns>An unbound switch configuration with both switches disabled.</returns>
+    public static SwitchConfiguration CreateSwitches() =>
+        new(
+            VisibilityRule.SwitchA,
+            false,
+            false,
+            new HotkeyBinding(HotkeyActivationMode.Unbound, null, null, null, null),
+            new HotkeyBinding(HotkeyActivationMode.Unbound, null, null, null, null));
 }

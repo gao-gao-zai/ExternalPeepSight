@@ -2,6 +2,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace ExternalPeepSight.Core.Tests;
 
@@ -20,8 +21,8 @@ public sealed class EpsxSecurityTests
     public void MissingManifestOrProfilesIsRejected()
     {
         using MemoryStream missingManifest = CreateZip(
-            ("profiles.json", ConfigurationJson.Serialize(ConfigurationDefaults.Create())));
-        using MemoryStream missingProfiles = CreateZip(("manifest.json", "{\"schemaVersion\":1,\"assets\":[]}"));
+            ("profiles.json", CreatePortableDocument(ConfigurationDefaults.Create())));
+        using MemoryStream missingProfiles = CreateZip(("manifest.json", "{\"schemaVersion\":3,\"assets\":[]}"));
 
         Assert.Throws<ConfigurationFormatException>(() =>
             EpsxArchive.Import(missingManifest, ConfigurationDefaults.Create()));
@@ -34,10 +35,10 @@ public sealed class EpsxSecurityTests
     {
         using MemoryStream invalidJson = CreateZip(
             ("manifest.json", "{"),
-            ("profiles.json", ConfigurationJson.Serialize(ConfigurationDefaults.Create())));
+            ("profiles.json", CreatePortableDocument(ConfigurationDefaults.Create())));
         using MemoryStream invalidSchema = CreateZip(
             ("manifest.json", "{\"schemaVersion\":99,\"assets\":[]}"),
-            ("profiles.json", ConfigurationJson.Serialize(ConfigurationDefaults.Create())));
+            ("profiles.json", CreatePortableDocument(ConfigurationDefaults.Create())));
 
         Assert.Throws<ConfigurationFormatException>(() =>
             EpsxArchive.Import(invalidJson, ConfigurationDefaults.Create()));
@@ -98,10 +99,10 @@ public sealed class EpsxSecurityTests
         string manifest = CreateManifest(asset.Reference, asset.Reference.Sha256);
         using MemoryStream missing = CreateZip(
             ("manifest.json", manifest),
-            ("profiles.json", ConfigurationJson.Serialize(document)));
+            ("profiles.json", CreatePortableDocument(document)));
         using MemoryStream wrongHash = CreateZipBytes(
             ("manifest.json", Encoding.UTF8.GetBytes(CreateManifest(asset.Reference, new string('0', 64)))),
-            ("profiles.json", Encoding.UTF8.GetBytes(ConfigurationJson.Serialize(document))),
+            ("profiles.json", Encoding.UTF8.GetBytes(CreatePortableDocument(document))),
             ($"assets/{asset.Reference.Id:N}.png", asset.Content));
 
         Assert.Throws<ConfigurationFormatException>(() =>
@@ -157,10 +158,24 @@ public sealed class EpsxSecurityTests
         Assert.Equal(before, ConfigurationJson.Serialize(existing));
     }
 
+    [Fact]
+    public void ProfilesPayloadRejectsApplicationLevelSettings()
+    {
+        ConfigurationDocument document = ConfigurationDefaults.Create();
+        JsonObject portable = JsonNode.Parse(CreatePortableDocument(document))!.AsObject();
+        portable["toasts"] = JsonSerializer.SerializeToNode(document.Toasts);
+        using MemoryStream package = CreateZip(
+            ("manifest.json", "{\"schemaVersion\":3,\"assets\":[]}"),
+            ("profiles.json", portable.ToJsonString()));
+
+        Assert.Throws<ConfigurationFormatException>(() =>
+            EpsxArchive.Import(package, ConfigurationDefaults.Create()));
+    }
+
     private static string CreateManifest(AssetReference reference, string sha256) =>
         JsonSerializer.Serialize(new
         {
-            schemaVersion = 1,
+            schemaVersion = ConfigurationJson.CurrentSchemaVersion,
             assets = new[]
             {
                 new
@@ -174,6 +189,14 @@ public sealed class EpsxSecurityTests
                 },
             },
         });
+
+    private static string CreatePortableDocument(ConfigurationDocument document)
+    {
+        JsonObject root = JsonNode.Parse(ConfigurationJson.Serialize(document))!.AsObject();
+        root.Remove("monitorSelection");
+        root.Remove("toasts");
+        return root.ToJsonString();
+    }
 
     private static MemoryStream CreateZip(params (string Name, string Content)[] entries) =>
         CreateZipBytes(entries.Select(entry => (entry.Name, Encoding.UTF8.GetBytes(entry.Content))).ToArray());

@@ -1,5 +1,6 @@
 ﻿using System.IO.Compression;
 using System.Text;
+using System.Text.Json.Nodes;
 
 namespace ExternalPeepSight.Core.Tests;
 
@@ -18,8 +19,9 @@ public sealed class ConfigurationTests
         Assert.Equal(
             ConfigurationJson.Serialize(document),
             ConfigurationJson.Serialize(restored));
-        Assert.Contains("\"schemaVersion\":1", json);
+        Assert.Contains("\"schemaVersion\":3", json);
         Assert.Contains("\"angleDeg\":0", json);
+        Assert.DoesNotContain("\"switches\":", json[..json.IndexOf("\"profiles\"", StringComparison.Ordinal)]);
     }
 
     [Fact]
@@ -31,21 +33,121 @@ public sealed class ConfigurationTests
     }
 
     [Fact]
-    public void MissingSchemaVersionIsMigrated()
+    public void VersionOneGlobalSwitchesAreMigratedIntoEveryProfile()
     {
         ConfigurationDocument document = ConfigurationDefaults.Create();
-        string json = ConfigurationJson.Serialize(document).Replace("\"schemaVersion\":1,", string.Empty);
+        Profile first = document.Profiles[0];
+        Profile second = first with { Id = Guid.NewGuid(), Name = "Second" };
+        SwitchConfiguration switches = first.Switches with { InitialStateA = true };
+        ConfigurationDocument versionTwo = document with
+        {
+            Profiles =
+            [
+                first with { Switches = switches },
+                second with { Switches = switches },
+            ],
+            ProfileSets = [],
+        };
+        System.Text.Json.Nodes.JsonObject versionOne =
+            System.Text.Json.Nodes.JsonNode.Parse(ConfigurationJson.Serialize(versionTwo))!.AsObject();
+        versionOne["schemaVersion"] = 1;
+        System.Text.Json.Nodes.JsonArray profiles = versionOne["profiles"]!.AsArray();
+        System.Text.Json.Nodes.JsonNode migratedSwitches = profiles[0]!["switches"]!.DeepClone();
+        foreach (System.Text.Json.Nodes.JsonNode? profile in profiles)
+        {
+            if (profile is System.Text.Json.Nodes.JsonObject profileObject)
+            {
+                profileObject.Remove("switches");
+            }
+        }
+        versionOne["switches"] = migratedSwitches;
 
-        ConfigurationDocument restored = ConfigurationJson.Deserialize(json);
+        ConfigurationDocument restored = ConfigurationJson.Deserialize(versionOne.ToJsonString());
 
         Assert.Equal(ConfigurationJson.CurrentSchemaVersion, restored.SchemaVersion);
+        Assert.All(restored.Profiles, profile => Assert.Equal(switches, profile.Switches));
+        Assert.DoesNotContain(
+            "\"switches\":",
+            ConfigurationJson.Serialize(restored)[..ConfigurationJson.Serialize(restored).IndexOf("\"profiles\"", StringComparison.Ordinal)]);
+    }
+
+    [Fact]
+    public void VersionTwoKeyboardBindingsAreMigratedToDeviceCodes()
+    {
+        ConfigurationDocument current = ConfigurationDefaults.Create();
+        var keyboard = new KeyIdentity(InputDeviceKind.Keyboard, 0x31, false, KeyModifiers.Ctrl);
+        current = current with
+        {
+            Profiles =
+            [
+                current.Profiles[0] with
+                {
+                    Switches = current.Profiles[0].Switches with
+                    {
+                        SwitchA = new HotkeyBinding(
+                            HotkeyActivationMode.Toggle,
+                            keyboard,
+                            null,
+                            null,
+                            null),
+                    },
+                },
+            ],
+        };
+        JsonObject versionTwo = JsonNode.Parse(ConfigurationJson.Serialize(current))!.AsObject();
+        versionTwo["schemaVersion"] = 2;
+        JsonObject key = versionTwo["profiles"]![0]!["switches"]!["switchA"]!["toggleKey"]!.AsObject();
+        key["scanCode"] = key["code"]!.DeepClone();
+        key.Remove("device");
+        key.Remove("code");
+
+        ConfigurationDocument restored = ConfigurationJson.Deserialize(versionTwo.ToJsonString());
+
+        Assert.Equal(keyboard, restored.Profiles[0].Switches.SwitchA.ToggleKey);
+        string serialized = ConfigurationJson.Serialize(restored);
+        Assert.Contains("\"device\":\"keyboard\"", serialized);
+        Assert.Contains("\"code\":49", serialized);
+        Assert.DoesNotContain("\"scanCode\"", serialized);
+    }
+
+    [Fact]
+    public void MouseBindingRoundTripsThroughJson()
+    {
+        ConfigurationDocument document = ConfigurationDefaults.Create();
+        var mouse = new KeyIdentity(
+            InputDeviceKind.Mouse,
+            (ushort)InputMouseButton.X1,
+            false,
+            KeyModifiers.Ctrl);
+        document = document with
+        {
+            Profiles =
+            [
+                document.Profiles[0] with
+                {
+                    Switches = document.Profiles[0].Switches with
+                    {
+                        SwitchA = new HotkeyBinding(
+                            HotkeyActivationMode.Hold,
+                            null,
+                            null,
+                            null,
+                            mouse),
+                    },
+                },
+            ],
+        };
+
+        ConfigurationDocument restored = ConfigurationJson.Deserialize(ConfigurationJson.Serialize(document));
+
+        Assert.Equal(mouse, restored.Profiles[0].Switches.SwitchA.HoldKey);
     }
 
     [Fact]
     public void NewerSchemaVersionIsRejected()
     {
         string json = ConfigurationJson.Serialize(ConfigurationDefaults.Create())
-            .Replace("\"schemaVersion\":1", "\"schemaVersion\":99");
+            .Replace("\"schemaVersion\":3", "\"schemaVersion\":99");
 
         Assert.Throws<ConfigurationFormatException>(() => ConfigurationJson.Deserialize(json));
     }
@@ -79,6 +181,12 @@ public sealed class ConfigurationTests
                         ],
                     },
                     Image = new ImageOverlay(Guid.NewGuid(), AnchorMode.ScreenCenter, new PixelPoint(200000, 0), 0, true),
+                    Switches = new(
+                        (VisibilityRule)99,
+                        false,
+                        false,
+                        new HotkeyBinding(HotkeyActivationMode.Toggle, null, null, null, null),
+                        new HotkeyBinding(HotkeyActivationMode.Unbound, null, null, null, null)),
                 },
             ],
             ProfileSets =
@@ -90,12 +198,6 @@ public sealed class ConfigurationTests
                 new(Guid.NewGuid(), "../bad.png", "application/octet-stream", 0, "invalid"),
             ],
             MonitorSelection = new(MonitorSelectionMode.Explicit, [], FocusMonitorSource.Mouse),
-            Switches = new(
-                (VisibilityRule)99,
-                false,
-                false,
-                new HotkeyBinding(HotkeyActivationMode.Toggle, null, null, null, null),
-                new HotkeyBinding(HotkeyActivationMode.Unbound, null, null, null, null)),
             Toasts = new(true, (ToastPosition)99, 1, string.Empty, 1, RgbaColor.White, RgbaColor.Transparent),
         };
 
@@ -178,6 +280,55 @@ public sealed class ConfigurationTests
     }
 
     [Fact]
+    public void EpsxContainsOnlyPortableConfigurationData()
+    {
+        (ConfigurationDocument document, EpsxAsset asset) = CreateImageDocument();
+        using var stream = new MemoryStream();
+
+        EpsxArchive.Export(stream, document, [asset]);
+        string profilesJson = ReadZipText(stream, "profiles.json");
+        JsonObject root = JsonNode.Parse(profilesJson)!.AsObject();
+
+        Assert.Equal(ConfigurationJson.CurrentSchemaVersion, root["schemaVersion"]!.GetValue<int>());
+        Assert.NotNull(root["profiles"]);
+        Assert.NotNull(root["profileSets"]);
+        Assert.NotNull(root["assets"]);
+        Assert.NotNull(root["profiles"]![0]!["switches"]);
+        Assert.Null(root["monitorSelection"]);
+        Assert.Null(root["toasts"]);
+        Assert.Null(root["switches"]);
+    }
+
+    [Fact]
+    public void EpsxImportKeepsExistingApplicationSettings()
+    {
+        (ConfigurationDocument imported, EpsxAsset asset) = CreateImageDocument();
+        ConfigurationDocument existing = ConfigurationDefaults.Create() with
+        {
+            MonitorSelection = new(
+                MonitorSelectionMode.Explicit,
+                ["DISPLAY-LOCAL"],
+                FocusMonitorSource.Mouse),
+            Toasts = new(
+                false,
+                ToastPosition.BottomLeft,
+                4321,
+                "Consolas",
+                16,
+                new RgbaColor(1, 2, 3),
+                new RgbaColor(4, 5, 6, 7)),
+        };
+        using var stream = new MemoryStream();
+        EpsxArchive.Export(stream, imported, [asset]);
+        stream.Position = 0;
+
+        ConfigurationMergeResult result = EpsxArchive.Import(stream, existing);
+
+        Assert.Equal(existing.MonitorSelection, result.Document.MonitorSelection);
+        Assert.Equal(existing.Toasts, result.Document.Toasts);
+    }
+
+    [Fact]
     public void EpsxImportResolvesConflictingProfileAndAssetIds()
     {
         (ConfigurationDocument imported, EpsxAsset asset) = CreateImageDocument();
@@ -250,6 +401,16 @@ public sealed class ConfigurationTests
             Assets = [reference],
         };
         return (document, new EpsxAsset(reference, content));
+    }
+
+    private static string ReadZipText(MemoryStream stream, string entryName)
+    {
+        stream.Position = 0;
+        using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true);
+        ZipArchiveEntry entry = archive.GetEntry(entryName)!;
+        using Stream input = entry.Open();
+        using var reader = new StreamReader(input, Encoding.UTF8);
+        return reader.ReadToEnd();
     }
 
     private static string CreateTempDirectory()

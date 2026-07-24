@@ -28,7 +28,7 @@ public static class ConfigurationJson
     /// <summary>
     /// Gets the newest schema version supported by this build.
     /// </summary>
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 3;
 
     private static readonly JsonSerializerOptions CompactOptions = CreateOptions(false);
     private static readonly JsonSerializerOptions IndentedOptions = CreateOptions(true);
@@ -73,7 +73,9 @@ public static class ConfigurationJson
             int version = GetSchemaVersion(root);
             JsonObject migrated = version switch
             {
-                0 => MigrateVersionZero(root),
+                0 => MigrateVersionTwo(MigrateVersionOne(MigrateVersionZero(root))),
+                1 => MigrateVersionTwo(MigrateVersionOne(root)),
+                2 => MigrateVersionTwo(root),
                 CurrentSchemaVersion => root,
                 > CurrentSchemaVersion => throw new ConfigurationFormatException(
                     $"Configuration schema version {version} is newer than supported version {CurrentSchemaVersion}."),
@@ -104,8 +106,11 @@ public static class ConfigurationJson
         }
     }
 
-    internal static string SerializeCanonical<T>(T value) =>
-        JsonSerializer.Serialize(value, CompactOptions);
+    internal static string SerializeCanonical<T>(T value, bool indented = false) =>
+        JsonSerializer.Serialize(value, indented ? IndentedOptions : CompactOptions);
+
+    internal static T? DeserializeCanonical<T>(ReadOnlySpan<byte> json) =>
+        JsonSerializer.Deserialize<T>(json, CompactOptions);
 
     private static int GetSchemaVersion(JsonObject root)
     {
@@ -125,11 +130,79 @@ public static class ConfigurationJson
     private static JsonObject MigrateVersionZero(JsonObject root)
     {
         var migrated = (JsonObject)root.DeepClone();
-        migrated["schemaVersion"] = CurrentSchemaVersion;
+        migrated["schemaVersion"] = 1;
         migrated["profiles"] ??= new JsonArray();
         migrated["profileSets"] ??= new JsonArray();
         migrated["assets"] ??= new JsonArray();
+        migrated["switches"] ??= JsonSerializer.SerializeToNode(
+            ConfigurationDefaults.CreateSwitches(),
+            CompactOptions);
         return migrated;
+    }
+
+    private static JsonObject MigrateVersionOne(JsonObject root)
+    {
+        var migrated = (JsonObject)root.DeepClone();
+        JsonNode switches = migrated["switches"]?.DeepClone()
+            ?? JsonSerializer.SerializeToNode(ConfigurationDefaults.CreateSwitches(), CompactOptions)
+            ?? throw new ConfigurationFormatException("Default switch configuration could not be serialized.");
+        if (migrated["profiles"] is JsonArray profiles)
+        {
+            foreach (JsonNode? item in profiles)
+            {
+                if (item is JsonObject profile)
+                {
+                    profile["switches"] ??= switches.DeepClone();
+                }
+            }
+        }
+
+        migrated.Remove("switches");
+        migrated["schemaVersion"] = 2;
+        return migrated;
+    }
+
+    private static JsonObject MigrateVersionTwo(JsonObject root)
+    {
+        var migrated = (JsonObject)root.DeepClone();
+        if (migrated["profiles"] is JsonArray profiles)
+        {
+            foreach (JsonNode? profileNode in profiles)
+            {
+                if (profileNode is not JsonObject profile ||
+                    profile["switches"] is not JsonObject switches)
+                {
+                    continue;
+                }
+
+                MigrateBindingKeys(switches["switchA"] as JsonObject);
+                MigrateBindingKeys(switches["switchB"] as JsonObject);
+            }
+        }
+
+        migrated["schemaVersion"] = CurrentSchemaVersion;
+        return migrated;
+    }
+
+    private static void MigrateBindingKeys(JsonObject? binding)
+    {
+        if (binding is null)
+        {
+            return;
+        }
+
+        foreach (string propertyName in new[] { "toggleKey", "enableKey", "disableKey", "holdKey" })
+        {
+            if (binding[propertyName] is not JsonObject key ||
+                !key.TryGetPropertyValue("scanCode", out JsonNode? scanCode))
+            {
+                continue;
+            }
+
+            key["device"] = "keyboard";
+            key["code"] = scanCode?.DeepClone();
+            key.Remove("scanCode");
+        }
     }
 
     private static JsonSerializerOptions CreateOptions(bool indented)

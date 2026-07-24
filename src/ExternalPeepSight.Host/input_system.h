@@ -38,11 +38,30 @@ enum class InputModifiers : std::uint8_t
     return static_cast<InputModifiers>(static_cast<std::uint8_t>(left) & static_cast<std::uint8_t>(right));
 }
 
-/// Identifies one physical keyboard key and its required modifiers.
+/// Identifies the device that produces a configured input.
+enum class InputDeviceKind : std::uint8_t
+{
+    keyboard,
+    mouse,
+};
+
+/// Identifies a bindable physical mouse button.
+enum class InputMouseButton : std::uint16_t
+{
+    left = 1U,
+    right = 2U,
+    middle = 3U,
+    x1 = 4U,
+    x2 = 5U,
+};
+
+/// Identifies one physical keyboard key or mouse button and its required modifiers.
 struct InputKeyIdentity
 {
-    /// Hardware scan code.
-    std::uint16_t scan_code;
+    /// Device that produces the input.
+    InputDeviceKind device;
+    /// Keyboard scan code or InputMouseButton value.
+    std::uint16_t code;
     /// Whether the key uses an E0 or E1 extended scan-code prefix.
     bool extended;
     /// Modifiers that must be held when the key is pressed.
@@ -51,26 +70,28 @@ struct InputKeyIdentity
     bool operator==(const InputKeyIdentity &) const = default;
 };
 
-/// Identifies one physical key independently of modifier state.
+/// Identifies one physical keyboard key or mouse button independently of modifier state.
 struct InputPhysicalKey
 {
-    /// Hardware scan code.
-    std::uint16_t scan_code;
+    /// Device that produces the input.
+    InputDeviceKind device;
+    /// Keyboard scan code or InputMouseButton value.
+    std::uint16_t code;
     /// Whether the key uses an E0 or E1 extended scan-code prefix.
     bool extended;
 
     bool operator==(const InputPhysicalKey &) const = default;
 };
 
-/// One physical keyboard transition decoded from a Raw Input payload.
-struct RawKeyboardTransition
+/// One physical keyboard or mouse transition decoded from a Raw Input payload.
+struct RawInputTransition
 {
-    /// Physical key reported by the keyboard device.
+    /// Physical input reported by the device.
     InputPhysicalKey key;
     /// Whether the transition is a key-down event.
     bool pressed;
 
-    bool operator==(const RawKeyboardTransition &) const = default;
+    bool operator==(const RawInputTransition &) const = default;
 };
 
 /// Selects how a binding changes its logical switch.
@@ -218,8 +239,8 @@ struct InputApplyResult
 /// Evaluates logical switch state for the configured visibility rule.
 [[nodiscard]] bool evaluate_input_visibility(InputVisibilityRule rule, bool switch_a, bool switch_b) noexcept;
 
-/// Decodes a complete keyboard Raw Input payload or returns no value for another device type.
-[[nodiscard]] std::optional<RawKeyboardTransition> parse_raw_keyboard_input(std::span<const std::byte> payload);
+/// Decodes all keyboard or mouse button transitions in one complete Raw Input payload.
+[[nodiscard]] std::vector<RawInputTransition> parse_raw_input(std::span<const std::byte> payload);
 
 /// Deterministic logical-switch state machine shared by all input backends.
 class HotkeyStateMachine

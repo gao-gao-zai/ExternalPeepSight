@@ -2,6 +2,7 @@
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using ExternalPeepSight.Core;
 using AvaloniaKeyModifiers = Avalonia.Input.KeyModifiers;
 using ConfigurationKeyModifiers = ExternalPeepSight.Core.KeyModifiers;
@@ -21,6 +22,11 @@ internal sealed class HotkeyCaptureBox : Button
     public HotkeyCaptureBox()
     {
         AddHandler(KeyDownEvent, OnCaptureKeyDown, handledEventsToo: true);
+        AddHandler(
+            PointerPressedEvent,
+            OnCapturePointerPressed,
+            RoutingStrategies.Tunnel,
+            handledEventsToo: true);
         UpdateContent();
     }
 
@@ -60,6 +66,34 @@ internal sealed class HotkeyCaptureBox : Button
         }
 
         args.Handled = true;
+    }
+
+    private void OnCapturePointerPressed(object? sender, PointerPressedEventArgs args)
+    {
+        if (!IsKeyboardFocusWithin)
+        {
+            return;
+        }
+
+        PointerPointProperties properties = args.GetCurrentPoint(this).Properties;
+        InputMouseButton? button = properties switch
+        {
+            { IsXButton2Pressed: true } => InputMouseButton.X2,
+            { IsXButton1Pressed: true } => InputMouseButton.X1,
+            { IsMiddleButtonPressed: true } => InputMouseButton.Middle,
+            { IsRightButtonPressed: true } => InputMouseButton.Right,
+            { IsLeftButtonPressed: true } => InputMouseButton.Left,
+            _ => null,
+        };
+        if (button.HasValue)
+        {
+            Value = new KeyIdentity(
+                InputDeviceKind.Mouse,
+                (ushort)button.Value,
+                false,
+                PhysicalKeyMapper.MapModifiers(args.KeyModifiers));
+            args.Handled = true;
+        }
     }
 
     private void UpdateContent()
@@ -116,36 +150,58 @@ internal static class PhysicalKeyMapper
             return false;
         }
 
-        ConfigurationKeyModifiers configurationModifiers = ConfigurationKeyModifiers.None;
-        if (modifiers.HasFlag(AvaloniaKeyModifiers.Control))
-        {
-            configurationModifiers |= ConfigurationKeyModifiers.Ctrl;
-        }
-        if (modifiers.HasFlag(AvaloniaKeyModifiers.Alt))
-        {
-            configurationModifiers |= ConfigurationKeyModifiers.Alt;
-        }
-        if (modifiers.HasFlag(AvaloniaKeyModifiers.Shift))
-        {
-            configurationModifiers |= ConfigurationKeyModifiers.Shift;
-        }
-        if (modifiers.HasFlag(AvaloniaKeyModifiers.Meta))
-        {
-            configurationModifiers |= ConfigurationKeyModifiers.Win;
-        }
-
-        identity = new KeyIdentity(mapped.Value.ScanCode, mapped.Value.Extended, configurationModifiers);
+        identity = new KeyIdentity(
+            InputDeviceKind.Keyboard,
+            mapped.Value.ScanCode,
+            mapped.Value.Extended,
+            MapModifiers(modifiers));
         return true;
     }
 
     public static string GetDisplayName(KeyIdentity identity)
     {
+        if (identity.Device == InputDeviceKind.Mouse)
+        {
+            return ((InputMouseButton)identity.Code) switch
+            {
+                InputMouseButton.Left => "Mouse Left",
+                InputMouseButton.Right => "Mouse Right",
+                InputMouseButton.Middle => "Mouse Middle",
+                InputMouseButton.X1 => "Mouse X1",
+                InputMouseButton.X2 => "Mouse X2",
+                _ => $"Mouse {identity.Code}",
+            };
+        }
+
         PhysicalKey key = AllMappings.FirstOrDefault(pair =>
-            pair.Value.ScanCode == identity.ScanCode &&
+            pair.Value.ScanCode == identity.Code &&
             pair.Value.Extended == identity.Extended).Key;
         return key == PhysicalKey.None
-            ? $"SC {identity.ScanCode:X2}"
+            ? $"SC {identity.Code:X2}"
             : key.ToString();
+    }
+
+    public static ConfigurationKeyModifiers MapModifiers(AvaloniaKeyModifiers modifiers)
+    {
+        ConfigurationKeyModifiers result = ConfigurationKeyModifiers.None;
+        if (modifiers.HasFlag(AvaloniaKeyModifiers.Control))
+        {
+            result |= ConfigurationKeyModifiers.Ctrl;
+        }
+        if (modifiers.HasFlag(AvaloniaKeyModifiers.Alt))
+        {
+            result |= ConfigurationKeyModifiers.Alt;
+        }
+        if (modifiers.HasFlag(AvaloniaKeyModifiers.Shift))
+        {
+            result |= ConfigurationKeyModifiers.Shift;
+        }
+        if (modifiers.HasFlag(AvaloniaKeyModifiers.Meta))
+        {
+            result |= ConfigurationKeyModifiers.Win;
+        }
+
+        return result;
     }
 
     private static (ushort ScanCode, bool Extended)? Map(PhysicalKey key) =>

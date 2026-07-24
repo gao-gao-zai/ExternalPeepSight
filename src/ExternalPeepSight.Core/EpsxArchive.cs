@@ -62,7 +62,7 @@ public static class EpsxArchive
     private const string ProfilesEntryName = "profiles.json";
 
     /// <summary>
-    /// Exports a complete configuration and its resources to an EPSX stream.
+    /// Exports portable profiles, profile sets, and their resources to an EPSX stream.
     /// </summary>
     /// <param name="destination">The writable destination stream.</param>
     /// <param name="document">The configuration to export.</param>
@@ -99,7 +99,17 @@ public static class EpsxArchive
 
         using var archive = new ZipArchive(destination, ZipArchiveMode.Create, leaveOpen: true);
         WriteTextEntry(archive, ManifestEntryName, JsonSerializer.Serialize(manifest, CreateJsonOptions(true)));
-        WriteTextEntry(archive, ProfilesEntryName, ConfigurationJson.Serialize(document, indented: true));
+        var portable = new PortableConfigurationDocument
+        {
+            SchemaVersion = ConfigurationJson.CurrentSchemaVersion,
+            Profiles = document.Profiles,
+            ProfileSets = document.ProfileSets,
+            Assets = document.Assets,
+        };
+        WriteTextEntry(
+            archive,
+            ProfilesEntryName,
+            ConfigurationJson.SerializeCanonical(portable, indented: true));
         foreach (EpsxAsset asset in assetMap.Values)
         {
             ZipArchiveEntry entry = archive.CreateEntry(GetAssetPath(asset.Reference), CompressionLevel.Optimal);
@@ -135,7 +145,18 @@ public static class EpsxArchive
             throw new ConfigurationFormatException("EPSX package is missing profiles.json.");
         }
 
-        ConfigurationDocument imported = ConfigurationJson.Deserialize(Encoding.UTF8.GetString(documentBytes));
+        PortableConfigurationDocument portable = DeserializePortableDocument(documentBytes);
+        ConfigurationDocument imported = existing with
+        {
+            SchemaVersion = portable.SchemaVersion,
+            Profiles = portable.Profiles
+                ?? throw new ConfigurationFormatException("EPSX profiles.json requires profiles."),
+            ProfileSets = portable.ProfileSets
+                ?? throw new ConfigurationFormatException("EPSX profiles.json requires profileSets."),
+            Assets = portable.Assets
+                ?? throw new ConfigurationFormatException("EPSX profiles.json requires assets."),
+        };
+        ConfigurationValidator.Validate(imported).ThrowIfInvalid();
         var assets = ReadAssets(manifest, imported, entries, options);
         ConfigurationMergeResult result = ConfigurationMerger.Merge(existing, imported, assets);
         ConfigurationValidator.Validate(result.Document).ThrowIfInvalid();
@@ -211,6 +232,39 @@ public static class EpsxArchive
         catch (JsonException exception)
         {
             throw new ConfigurationFormatException("EPSX manifest is invalid JSON.", exception);
+        }
+    }
+
+    private static PortableConfigurationDocument DeserializePortableDocument(byte[] documentBytes)
+    {
+        try
+        {
+            PortableConfigurationDocument document =
+                ConfigurationJson.DeserializeCanonical<PortableConfigurationDocument>(documentBytes)
+                ?? throw new ConfigurationFormatException("EPSX profiles.json is empty.");
+            if (document.SchemaVersion != ConfigurationJson.CurrentSchemaVersion)
+            {
+                throw new ConfigurationFormatException("EPSX profiles.json schema is unsupported.");
+            }
+
+            if (document.Profiles is null || document.ProfileSets is null || document.Assets is null)
+            {
+                throw new ConfigurationFormatException("EPSX profiles.json requires profiles, profileSets, and assets.");
+            }
+
+            return document;
+        }
+        catch (ConfigurationFormatException)
+        {
+            throw;
+        }
+        catch (JsonException exception)
+        {
+            throw new ConfigurationFormatException("EPSX profiles.json is invalid JSON.", exception);
+        }
+        catch (NotSupportedException exception)
+        {
+            throw new ConfigurationFormatException("EPSX profiles.json contains an unsupported value.", exception);
         }
     }
 
@@ -388,6 +442,14 @@ public static class EpsxArchive
         public long SizeBytes { get; init; }
         public string Sha256 { get; init; } = string.Empty;
         public string Path { get; init; } = string.Empty;
+    }
+
+    private sealed record PortableConfigurationDocument
+    {
+        public int SchemaVersion { get; init; }
+        public Profile[]? Profiles { get; init; }
+        public ProfileSet[]? ProfileSets { get; init; }
+        public AssetReference[]? Assets { get; init; }
     }
 }
 

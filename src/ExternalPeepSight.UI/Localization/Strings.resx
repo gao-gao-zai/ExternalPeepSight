@@ -41,6 +41,8 @@
   <data name="Common.Apply" xml:space="preserve"><value>Apply</value></data>
   <data name="Common.Position" xml:space="preserve"><value>Position</value></data>
   <data name="Crosshair.Preview" xml:space="preserve"><value>Live preview</value></data>
+  <data name="Crosshair.TabOverlay" xml:space="preserve"><value>Crosshair &amp; image</value></data>
+  <data name="Crosshair.TabSwitches" xml:space="preserve"><value>Switches &amp; hotkeys</value></data>
   <data name="Crosshair.CenterPoint" xml:space="preserve"><value>Center point</value></data>
   <data name="Crosshair.CenterVisible" xml:space="preserve"><value>Show center point</value></data>
   <data name="Crosshair.CenterRadius" xml:space="preserve"><value>Center radius (px)</value></data>
@@ -93,7 +95,7 @@
   <data name="Hotkey.EnableKey" xml:space="preserve"><value>Enable key</value></data>
   <data name="Hotkey.DisableKey" xml:space="preserve"><value>Disable key</value></data>
   <data name="Hotkey.HoldKey" xml:space="preserve"><value>Hold key</value></data>
-  <data name="Hotkey.Capture" xml:space="preserve"><value>Click and press a key combination</value></data>
+  <data name="Hotkey.Capture" xml:space="preserve"><value>Click, then press a key or mouse button</value></data>
   <data name="Hotkey.Conflict" xml:space="preserve"><value>This shortcut conflicts with another active binding.</value></data>
   <data name="Hotkey.Unsupported" xml:space="preserve"><value>This physical key is not supported.</value></data>
   <data name="Profiles.Sets" xml:space="preserve"><value>Profile sets</value></data>

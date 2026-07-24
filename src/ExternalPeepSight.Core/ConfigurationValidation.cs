@@ -133,7 +133,6 @@ public static class ConfigurationValidator
         ValidateProfileSets(document, issues);
         ValidateAssets(document, options, issues);
         ValidateMonitorSelection(document.MonitorSelection, options, issues);
-        ValidateSwitches(document.Switches, issues);
         ValidateToasts(document.Toasts, issues);
         return new ConfigurationValidationResult(issues);
     }
@@ -187,6 +186,7 @@ public static class ConfigurationValidator
             ValidateName(profile.Name, $"{path}.name", issues);
             ValidateCrosshair(profile.Crosshair, $"{path}.crosshair", issues);
             ValidateImage(profile, $"{path}.image", issues);
+            ValidateSwitches(profile.Switches, $"{path}.switches", issues);
         }
 
         HashSet<Guid> assetIds = document.Assets is null
@@ -351,22 +351,23 @@ public static class ConfigurationValidator
 
     private static void ValidateSwitches(
         SwitchConfiguration? switches,
+        string path,
         List<ValidationIssue> issues)
     {
         if (switches is null)
         {
-            issues.Add(new ValidationIssue("$.switches", "Switch configuration is required."));
+            issues.Add(new ValidationIssue(path, "Switch configuration is required."));
             return;
         }
 
         if (!Enum.IsDefined(switches.VisibilityRule))
         {
-            issues.Add(new ValidationIssue("$.switches.visibilityRule", "Visibility rule is invalid."));
+            issues.Add(new ValidationIssue($"{path}.visibilityRule", "Visibility rule is invalid."));
         }
 
-        ValidateHotkey(switches.SwitchA, "$.switches.switchA", issues);
-        ValidateHotkey(switches.SwitchB, "$.switches.switchB", issues);
-        ValidateUniqueHotkeys(switches, issues);
+        ValidateHotkey(switches.SwitchA, $"{path}.switchA", issues);
+        ValidateHotkey(switches.SwitchB, $"{path}.switchB", issues);
+        ValidateUniqueHotkeys(switches, path, issues);
     }
 
     private static void ValidateHotkey(
@@ -452,9 +453,22 @@ public static class ConfigurationValidator
             return;
         }
 
-        if (key.Value.ScanCode == 0)
+        if (!Enum.IsDefined(key.Value.Device))
         {
-            issues.Add(new ValidationIssue(path, "Scan code must be non-zero."));
+            issues.Add(new ValidationIssue($"{path}.device", "Input device is invalid."));
+        }
+        else if (key.Value.Device == InputDeviceKind.Keyboard && key.Value.Code == 0)
+        {
+            issues.Add(new ValidationIssue($"{path}.code", "Keyboard scan code must be non-zero."));
+        }
+        else if (key.Value.Device == InputDeviceKind.Mouse &&
+                 !Enum.IsDefined((InputMouseButton)key.Value.Code))
+        {
+            issues.Add(new ValidationIssue($"{path}.code", "Mouse button code is invalid."));
+        }
+        else if (key.Value.Device == InputDeviceKind.Mouse && key.Value.Extended)
+        {
+            issues.Add(new ValidationIssue($"{path}.extended", "Mouse buttons cannot use the keyboard extended flag."));
         }
 
         if ((key.Value.Modifiers & ~(
@@ -474,11 +488,12 @@ public static class ConfigurationValidator
 
     private static void ValidateUniqueHotkeys(
         SwitchConfiguration switches,
+        string path,
         List<ValidationIssue> issues)
     {
         var assignedKeys = new Dictionary<KeyIdentity, string>();
-        foreach ((KeyIdentity Key, string Path) assignment in ActiveHotkeys(switches.SwitchA, "$.switches.switchA")
-                     .Concat(ActiveHotkeys(switches.SwitchB, "$.switches.switchB")))
+        foreach ((KeyIdentity Key, string Path) assignment in ActiveHotkeys(switches.SwitchA, $"{path}.switchA")
+                     .Concat(ActiveHotkeys(switches.SwitchB, $"{path}.switchB")))
         {
             if (assignedKeys.TryGetValue(assignment.Key, out string? existingPath))
             {
@@ -534,18 +549,23 @@ public static class ConfigurationValidator
         const ushort LeftWindowsScanCode = 0x5B;
         const ushort RightWindowsScanCode = 0x5C;
 
+        if (key.Device != InputDeviceKind.Keyboard)
+        {
+            return false;
+        }
+
         bool alt = key.Modifiers.HasFlag(KeyModifiers.Alt);
         bool ctrl = key.Modifiers.HasFlag(KeyModifiers.Ctrl);
         bool windows = key.Modifiers.HasFlag(KeyModifiers.Win);
         bool primaryWindowsKey =
-            key.Extended && key.ScanCode is LeftWindowsScanCode or RightWindowsScanCode;
+            key.Extended && key.Code is LeftWindowsScanCode or RightWindowsScanCode;
 
         return windows ||
                primaryWindowsKey ||
-               key.ScanCode == F12ScanCode ||
-               (alt && key.ScanCode is TabScanCode or EscapeScanCode) ||
-               (ctrl && !alt && key.ScanCode == EscapeScanCode) ||
-               (ctrl && alt && key.Extended && key.ScanCode == DeleteScanCode);
+               key.Code == F12ScanCode ||
+               (alt && key.Code is TabScanCode or EscapeScanCode) ||
+               (ctrl && !alt && key.Code == EscapeScanCode) ||
+               (ctrl && alt && key.Extended && key.Code == DeleteScanCode);
     }
 
     private static void ValidateToasts(

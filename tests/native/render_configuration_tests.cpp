@@ -110,7 +110,7 @@ void write_bytes(const std::filesystem::path &path, const std::vector<std::uint8
     const std::string image_asset = asset_id.empty() ? "null" : std::format("\"{}\"", asset_id);
     return std::format(
         R"({{
-          "schemaVersion":1,
+          "schemaVersion":3,
           "profiles":[{{
             "id":"11111111-1111-1111-1111-111111111111",
             "name":"Test",
@@ -133,6 +133,13 @@ void write_bytes(const std::filesystem::path &path, const std::vector<std::uint8
               "offsetPx":{{"x":100,"y":200}},
               "scale":2,
               "keepAspectRatio":true
+            }},
+            "switches":{{
+              "visibilityRule":"switchA",
+              "initialStateA":false,
+              "initialStateB":false,
+              "switchA":{{"mode":"unbound","toggleKey":null,"enableKey":null,"disableKey":null,"holdKey":null}},
+              "switchB":{{"mode":"unbound","toggleKey":null,"enableKey":null,"disableKey":null,"holdKey":null}}
             }}
           }}],
           "profileSets":[{{
@@ -143,13 +150,6 @@ void write_bytes(const std::filesystem::path &path, const std::vector<std::uint8
           }}],
           "assets":[{}],
           "monitorSelection":{{"mode":"focus","monitorIds":[],"focusSource":"foregroundWindowThenMouse"}},
-          "switches":{{
-            "visibilityRule":"switchA",
-            "initialStateA":false,
-            "initialStateB":false,
-            "switchA":{{"mode":"unbound","toggleKey":null,"enableKey":null,"disableKey":null,"holdKey":null}},
-            "switchB":{{"mode":"unbound","toggleKey":null,"enableKey":null,"disableKey":null,"holdKey":null}}
-          }},
           "toasts":{{
             "enabled":true,
             "position":"bottomRight",

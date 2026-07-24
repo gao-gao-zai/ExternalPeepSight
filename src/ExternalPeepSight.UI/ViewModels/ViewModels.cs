@@ -90,10 +90,10 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
     {
         this.workspace = workspace;
         this.localization = localization;
-        Crosshair = new CrosshairEditorViewModel(workspace, localization);
-        Image = new ImageEditorViewModel(workspace, localization, fileDialogs);
+        Crosshair = new CrosshairEditorViewModel(workspace, localization, fileDialogs);
+        Image = Crosshair.Image;
         Monitors = new MonitorSelectionViewModel(workspace, localization, monitorEnumeration);
-        Switches = new SwitchesViewModel(workspace, localization);
+        Switches = Crosshair.Switches;
         Profiles = new ProfileSetsViewModel(workspace, localization);
         Transfer = new ImportExportViewModel(workspace, localization, fileDialogs);
         Settings = new SettingsViewModel(
@@ -105,9 +105,7 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
         Navigation =
         [
             new("Navigation.Crosshair", "\uE790", Crosshair, localization),
-            new("Navigation.Image", "\uEB9F", Image, localization),
             new("Navigation.Monitors", "\uE7F4", Monitors, localization),
-            new("Navigation.Switches", "\uE765", Switches, localization),
             new("Navigation.Profiles", "\uE8A5", Profiles, localization),
             new("Navigation.Transfer", "\uE8B5", Transfer, localization),
             new("Navigation.Settings", "\uE713", Settings, localization),
@@ -171,7 +169,7 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
         workspace.DocumentChanged -= OnWorkspaceChanged;
         workspace.PropertyChanged -= OnWorkspacePropertyChanged;
         localization.CultureChanged -= OnCultureChanged;
-        Image.Dispose();
+        Crosshair.Dispose();
         workspace.Dispose();
     }
 
@@ -198,15 +196,25 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
     private void OnCultureChanged(object? sender, EventArgs e) => OnPropertyChanged(nameof(HostStatus));
 }
 
-internal sealed class CrosshairEditorViewModel : WorkspaceViewModel
+internal enum CrosshairEditorTab
+{
+    Overlay,
+    Switches,
+}
+
+internal sealed class CrosshairEditorViewModel : WorkspaceViewModel, IDisposable
 {
     private int selectedArmIndex;
+    private CrosshairEditorTab selectedTab;
 
     public CrosshairEditorViewModel(
         ConfigurationWorkspace workspace,
-        LocalizationService localization)
+        LocalizationService localization,
+        IFileDialogService fileDialogs)
         : base(workspace)
     {
+        Image = new ImageEditorViewModel(workspace, localization, fileDialogs);
+        Switches = new SwitchesViewModel(workspace, localization);
         Modes =
         [
             new(OverlayMode.Crosshair, "Common.Crosshair", localization),
@@ -231,6 +239,60 @@ internal sealed class CrosshairEditorViewModel : WorkspaceViewModel
     public IReadOnlyList<LocalizedOption<AnchorMode>> Anchors { get; }
 
     public IReadOnlyList<LocalizedOption<int>> Arms { get; }
+
+    public ImageEditorViewModel Image { get; }
+
+    public SwitchesViewModel Switches { get; }
+
+    public CrosshairEditorTab SelectedTab
+    {
+        get => selectedTab;
+        set
+        {
+            if (SetProperty(ref selectedTab, value))
+            {
+                OnPropertyChanged(nameof(SelectedTabIndex));
+                OnPropertyChanged(nameof(IsOverlayTab));
+                OnPropertyChanged(nameof(IsSwitchesTab));
+            }
+        }
+    }
+
+    public int SelectedTabIndex
+    {
+        get => (int)SelectedTab;
+        set
+        {
+            if (Enum.IsDefined((CrosshairEditorTab)value))
+            {
+                SelectedTab = (CrosshairEditorTab)value;
+            }
+        }
+    }
+
+    public bool IsOverlayTab
+    {
+        get => SelectedTab == CrosshairEditorTab.Overlay;
+        set
+        {
+            if (value)
+            {
+                SelectedTab = CrosshairEditorTab.Overlay;
+            }
+        }
+    }
+
+    public bool IsSwitchesTab
+    {
+        get => SelectedTab == CrosshairEditorTab.Switches;
+        set
+        {
+            if (value)
+            {
+                SelectedTab = CrosshairEditorTab.Switches;
+            }
+        }
+    }
 
     public OverlayMode ActiveMode
     {
@@ -463,6 +525,8 @@ internal sealed class CrosshairEditorViewModel : WorkspaceViewModel
 
     public Crosshair Preview => Profile.Crosshair;
 
+    public void Dispose() => Image.Dispose();
+
     protected override void Refresh()
     {
         OnPropertyChanged(nameof(ActiveMode));
@@ -480,6 +544,8 @@ internal sealed class CrosshairEditorViewModel : WorkspaceViewModel
         OnPropertyChanged(nameof(CenterHex));
         OnPropertyChanged(nameof(Linked));
         OnPropertyChanged(nameof(Preview));
+        OnPropertyChanged(nameof(IsOverlayTab));
+        OnPropertyChanged(nameof(IsSwitchesTab));
         RefreshArm();
     }
 
@@ -1132,8 +1198,8 @@ internal sealed class HotkeyEditorViewModel : ObservableObject
 
     private HotkeyBinding CurrentBinding =>
         logicalSwitch == LogicalSwitch.A
-            ? workspace.Document.Switches.SwitchA
-            : workspace.Document.Switches.SwitchB;
+            ? workspace.SelectedProfile.Switches.SwitchA
+            : workspace.SelectedProfile.Switches.SwitchB;
 
     private void TryCommit()
     {
@@ -1148,11 +1214,11 @@ internal sealed class HotkeyEditorViewModel : ObservableObject
             return;
         }
 
-        bool applied = workspace.UpdateDocument(document => document with
+        bool applied = workspace.UpdateSelectedProfile(profile => profile with
         {
             Switches = logicalSwitch == LogicalSwitch.A
-                ? document.Switches with { SwitchA = candidate }
-                : document.Switches with { SwitchB = candidate },
+                ? profile.Switches with { SwitchA = candidate }
+                : profile.Switches with { SwitchB = candidate },
         });
         HasConflict = !applied;
     }
@@ -1228,28 +1294,28 @@ internal sealed class SwitchesViewModel : WorkspaceViewModel
 
     public VisibilityRule VisibilityRule
     {
-        get => Workspace.Document.Switches.VisibilityRule;
-        set => Workspace.UpdateDocument(document => document with
+        get => Workspace.SelectedProfile.Switches.VisibilityRule;
+        set => Workspace.UpdateSelectedProfile(profile => profile with
         {
-            Switches = document.Switches with { VisibilityRule = value },
+            Switches = profile.Switches with { VisibilityRule = value },
         });
     }
 
     public bool InitialStateA
     {
-        get => Workspace.Document.Switches.InitialStateA;
-        set => Workspace.UpdateDocument(document => document with
+        get => Workspace.SelectedProfile.Switches.InitialStateA;
+        set => Workspace.UpdateSelectedProfile(profile => profile with
         {
-            Switches = document.Switches with { InitialStateA = value },
+            Switches = profile.Switches with { InitialStateA = value },
         });
     }
 
     public bool InitialStateB
     {
-        get => Workspace.Document.Switches.InitialStateB;
-        set => Workspace.UpdateDocument(document => document with
+        get => Workspace.SelectedProfile.Switches.InitialStateB;
+        set => Workspace.UpdateSelectedProfile(profile => profile with
         {
-            Switches = document.Switches with { InitialStateB = value },
+            Switches = profile.Switches with { InitialStateB = value },
         });
     }
 

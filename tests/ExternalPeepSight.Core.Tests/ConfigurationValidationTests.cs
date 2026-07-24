@@ -14,7 +14,6 @@ public sealed class ConfigurationValidationTests
             ProfileSets = null!,
             Assets = null!,
             MonitorSelection = null!,
-            Switches = null!,
             Toasts = null!,
         };
 
@@ -23,7 +22,6 @@ public sealed class ConfigurationValidationTests
         Assert.False(result.IsValid);
         Assert.Contains(result.Issues, issue => issue.Path == "$.schemaVersion");
         Assert.Contains(result.Issues, issue => issue.Path == "$.monitorSelection");
-        Assert.Contains(result.Issues, issue => issue.Path == "$.switches");
         Assert.Contains(result.Issues, issue => issue.Path == "$.toasts");
     }
 
@@ -73,6 +71,17 @@ public sealed class ConfigurationValidationTests
                 ],
             },
             Image = new ImageOverlay(null, AnchorMode.TopLeft, new PixelPoint(-100001, 100001), double.PositiveInfinity, false),
+            Switches = new(
+                VisibilityRule.Both,
+                false,
+                false,
+                new HotkeyBinding((HotkeyActivationMode)99, null, null, null, null),
+                new HotkeyBinding(
+                    HotkeyActivationMode.Independent,
+                    null,
+                    new KeyIdentity(InputDeviceKind.Keyboard, 0, false, (KeyModifiers)32),
+                    null,
+                    null)),
         };
         Guid emptyAssetId = Guid.Empty;
         ConfigurationDocument document = seed with
@@ -90,17 +99,6 @@ public sealed class ConfigurationValidationTests
                 MonitorSelectionMode.Explicit,
                 [string.Empty, new string('M', 513)],
                 FocusMonitorSource.Mouse),
-            Switches = new(
-                VisibilityRule.Both,
-                false,
-                false,
-                new HotkeyBinding((HotkeyActivationMode)99, null, null, null, null),
-                new HotkeyBinding(
-                    HotkeyActivationMode.Independent,
-                    null,
-                    new KeyIdentity(0, false, (KeyModifiers)32),
-                    null,
-                    null)),
             Toasts = new(true, ToastPosition.BottomCenter, 60001, new string('F', 101), 201, RgbaColor.White, RgbaColor.Transparent),
         };
         var options = new ConfigurationValidationOptions
@@ -116,8 +114,8 @@ public sealed class ConfigurationValidationTests
 
         Assert.False(result.IsValid);
         Assert.True(result.Issues.Count >= 20);
-        Assert.Contains(result.Issues, issue => issue.Path.Contains("scanCode", StringComparison.OrdinalIgnoreCase) ||
-                                                issue.Message.Contains("Scan code", StringComparison.Ordinal));
+        Assert.Contains(result.Issues, issue => issue.Path.Contains("code", StringComparison.OrdinalIgnoreCase) ||
+                                                issue.Message.Contains("scan code", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(result.Issues, issue => issue.Message == "Arm is required.");
         Assert.Contains(result.Issues, issue => issue.Message.Contains("Monitor identifier", StringComparison.Ordinal));
     }
@@ -126,23 +124,35 @@ public sealed class ConfigurationValidationTests
     public void HotkeyModesRequireTheirSpecificKeys()
     {
         ConfigurationDocument seed = ConfigurationDefaults.Create();
-        KeyIdentity validKey = new(30, false, KeyModifiers.Ctrl | KeyModifiers.Shift);
-        KeyIdentity secondValidKey = new(48, false, KeyModifiers.Ctrl | KeyModifiers.Shift);
+        KeyIdentity validKey = new(InputDeviceKind.Keyboard, 30, false, KeyModifiers.Ctrl | KeyModifiers.Shift);
+        KeyIdentity secondValidKey = new(InputDeviceKind.Keyboard, 48, false, KeyModifiers.Ctrl | KeyModifiers.Shift);
         ConfigurationDocument missingKeys = seed with
         {
-            Switches = seed.Switches with
-            {
-                SwitchA = new HotkeyBinding(HotkeyActivationMode.Hold, null, null, null, null),
-                SwitchB = new HotkeyBinding(HotkeyActivationMode.Toggle, null, null, null, null),
-            },
+            Profiles =
+            [
+                seed.Profiles[0] with
+                {
+                    Switches = seed.Profiles[0].Switches with
+                    {
+                        SwitchA = new HotkeyBinding(HotkeyActivationMode.Hold, null, null, null, null),
+                        SwitchB = new HotkeyBinding(HotkeyActivationMode.Toggle, null, null, null, null),
+                    },
+                },
+            ],
         };
         ConfigurationDocument validKeys = seed with
         {
-            Switches = seed.Switches with
-            {
-                SwitchA = new HotkeyBinding(HotkeyActivationMode.Hold, null, null, null, validKey),
-                SwitchB = new HotkeyBinding(HotkeyActivationMode.Toggle, secondValidKey, null, null, null),
-            },
+            Profiles =
+            [
+                seed.Profiles[0] with
+                {
+                    Switches = seed.Profiles[0].Switches with
+                    {
+                        SwitchA = new HotkeyBinding(HotkeyActivationMode.Hold, null, null, null, validKey),
+                        SwitchB = new HotkeyBinding(HotkeyActivationMode.Toggle, secondValidKey, null, null, null),
+                    },
+                },
+            ],
         };
 
         Assert.False(ConfigurationValidator.Validate(missingKeys).IsValid);
@@ -150,18 +160,89 @@ public sealed class ConfigurationValidationTests
     }
 
     [Fact]
+    public void MouseButtonsAreValidatedByDevice()
+    {
+        ConfigurationDocument seed = ConfigurationDefaults.Create();
+        var validMouse = new KeyIdentity(
+            InputDeviceKind.Mouse,
+            (ushort)InputMouseButton.Middle,
+            false,
+            KeyModifiers.Alt);
+        var invalidCode = new KeyIdentity(InputDeviceKind.Mouse, 99, false, KeyModifiers.None);
+        var invalidExtended = validMouse with { Extended = true };
+        ConfigurationDocument valid = seed with
+        {
+            Profiles =
+            [
+                seed.Profiles[0] with
+                {
+                    Switches = seed.Profiles[0].Switches with
+                    {
+                        SwitchA = new HotkeyBinding(
+                            HotkeyActivationMode.Toggle,
+                            validMouse,
+                            null,
+                            null,
+                            null),
+                    },
+                },
+            ],
+        };
+        ConfigurationDocument invalidCodeDocument = valid with
+        {
+            Profiles =
+            [
+                valid.Profiles[0] with
+                {
+                    Switches = valid.Profiles[0].Switches with
+                    {
+                        SwitchA = valid.Profiles[0].Switches.SwitchA with { ToggleKey = invalidCode },
+                    },
+                },
+            ],
+        };
+        ConfigurationDocument invalidExtendedDocument = valid with
+        {
+            Profiles =
+            [
+                valid.Profiles[0] with
+                {
+                    Switches = valid.Profiles[0].Switches with
+                    {
+                        SwitchA = valid.Profiles[0].Switches.SwitchA with { ToggleKey = invalidExtended },
+                    },
+                },
+            ],
+        };
+
+        Assert.True(ConfigurationValidator.Validate(valid).IsValid);
+        Assert.Contains(
+            ConfigurationValidator.Validate(invalidCodeDocument).Issues,
+            issue => issue.Path.EndsWith(".code", StringComparison.Ordinal));
+        Assert.Contains(
+            ConfigurationValidator.Validate(invalidExtendedDocument).Issues,
+            issue => issue.Path.EndsWith(".extended", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void HotkeyModesRejectIrrelevantKeys()
     {
         ConfigurationDocument seed = ConfigurationDefaults.Create();
-        KeyIdentity keyA = new(30, false, KeyModifiers.None);
-        KeyIdentity keyB = new(48, false, KeyModifiers.None);
+        KeyIdentity keyA = new(InputDeviceKind.Keyboard, 30, false, KeyModifiers.None);
+        KeyIdentity keyB = new(InputDeviceKind.Keyboard, 48, false, KeyModifiers.None);
         ConfigurationDocument document = seed with
         {
-            Switches = seed.Switches with
-            {
-                SwitchA = new HotkeyBinding(HotkeyActivationMode.Unbound, keyA, null, null, null),
-                SwitchB = new HotkeyBinding(HotkeyActivationMode.Toggle, keyA, keyB, null, null),
-            },
+            Profiles =
+            [
+                seed.Profiles[0] with
+                {
+                    Switches = seed.Profiles[0].Switches with
+                    {
+                        SwitchA = new HotkeyBinding(HotkeyActivationMode.Unbound, keyA, null, null, null),
+                        SwitchB = new HotkeyBinding(HotkeyActivationMode.Toggle, keyA, keyB, null, null),
+                    },
+                },
+            ],
         };
 
         ConfigurationValidationResult result = ConfigurationValidator.Validate(document);
@@ -174,21 +255,27 @@ public sealed class ConfigurationValidationTests
     public void DuplicateActiveHotkeysAcrossSwitchesAreRejected()
     {
         ConfigurationDocument seed = ConfigurationDefaults.Create();
-        KeyIdentity duplicate = new(30, false, KeyModifiers.Ctrl);
+        KeyIdentity duplicate = new(InputDeviceKind.Keyboard, 30, false, KeyModifiers.Ctrl);
         ConfigurationDocument document = seed with
         {
-            Switches = seed.Switches with
-            {
-                SwitchA = new HotkeyBinding(HotkeyActivationMode.Toggle, duplicate, null, null, null),
-                SwitchB = new HotkeyBinding(HotkeyActivationMode.Hold, null, null, null, duplicate),
-            },
+            Profiles =
+            [
+                seed.Profiles[0] with
+                {
+                    Switches = seed.Profiles[0].Switches with
+                    {
+                        SwitchA = new HotkeyBinding(HotkeyActivationMode.Toggle, duplicate, null, null, null),
+                        SwitchB = new HotkeyBinding(HotkeyActivationMode.Hold, null, null, null, duplicate),
+                    },
+                },
+            ],
         };
 
         ConfigurationValidationResult result = ConfigurationValidator.Validate(document);
 
         Assert.Contains(result.Issues, issue =>
-            issue.Path == "$.switches.switchB.holdKey" &&
-            issue.Message.Contains("$.switches.switchA.toggleKey", StringComparison.Ordinal));
+            issue.Path == "$.profiles[0].switches.switchB.holdKey" &&
+            issue.Message.Contains("$.profiles[0].switches.switchA.toggleKey", StringComparison.Ordinal));
     }
 
     [Theory]
@@ -204,19 +291,25 @@ public sealed class ConfigurationValidationTests
         KeyModifiers modifiers)
     {
         ConfigurationDocument seed = ConfigurationDefaults.Create();
-        KeyIdentity reserved = new(scanCode, extended, modifiers);
+        KeyIdentity reserved = new(InputDeviceKind.Keyboard, scanCode, extended, modifiers);
         ConfigurationDocument document = seed with
         {
-            Switches = seed.Switches with
-            {
-                SwitchA = new HotkeyBinding(HotkeyActivationMode.Toggle, reserved, null, null, null),
-            },
+            Profiles =
+            [
+                seed.Profiles[0] with
+                {
+                    Switches = seed.Profiles[0].Switches with
+                    {
+                        SwitchA = new HotkeyBinding(HotkeyActivationMode.Toggle, reserved, null, null, null),
+                    },
+                },
+            ],
         };
 
         ConfigurationValidationResult result = ConfigurationValidator.Validate(document);
 
         Assert.Contains(result.Issues, issue =>
-            issue.Path == "$.switches.switchA.toggleKey" &&
+            issue.Path == "$.profiles[0].switches.switchA.toggleKey" &&
             issue.Message.Contains("System-reserved", StringComparison.Ordinal));
     }
 

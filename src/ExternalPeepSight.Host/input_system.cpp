@@ -28,12 +28,14 @@ namespace external_peepsight
 namespace
 {
 using winrt::Windows::Data::Json::IJsonValue;
+using winrt::Windows::Data::Json::JsonArray;
 using winrt::Windows::Data::Json::JsonObject;
 using winrt::Windows::Data::Json::JsonValueType;
 
 constexpr wchar_t kInputWindowClassName[] = L"ExternalPeepSight.Input.Window";
 constexpr UINT kApplyConfigurationMessage = WM_APP + 1U;
 constexpr UINT kHookKeyboardMessage = WM_APP + 2U;
+constexpr UINT kHookMouseMessage = WM_APP + 3U;
 constexpr int kFirstHotkeyIdentifier = 100;
 constexpr DWORD kApplyConfigurationTimeoutMs = 5'000U;
 constexpr InputModifiers kKnownModifiers =
@@ -69,15 +71,28 @@ void require_allowed_properties(const JsonObject &object, const std::initializer
     }
 }
 
-[[nodiscard]] std::uint16_t get_scan_code(const JsonObject &object)
+[[nodiscard]] std::uint16_t get_input_code(const JsonObject &object)
 {
-    const double value = object.GetNamedNumber(L"scanCode");
+    const double value = object.GetNamedNumber(L"code");
     if (value < 1.0 || value > static_cast<double>((std::numeric_limits<std::uint16_t>::max)()) ||
         std::floor(value) != value)
     {
-        throw std::invalid_argument("Input scan code is outside the supported range.");
+        throw std::invalid_argument("Input code is outside the supported range.");
     }
     return static_cast<std::uint16_t>(value);
+}
+
+[[nodiscard]] InputDeviceKind parse_device(const std::wstring_view value)
+{
+    if (value == L"keyboard")
+    {
+        return InputDeviceKind::keyboard;
+    }
+    if (value == L"mouse")
+    {
+        return InputDeviceKind::mouse;
+    }
+    throw std::invalid_argument("Input device is invalid.");
 }
 
 [[nodiscard]] InputModifiers parse_modifiers(const std::wstring_view encoded)
@@ -149,9 +164,9 @@ void require_allowed_properties(const JsonObject &object, const std::initializer
     }
 
     const JsonObject key = value.GetObject();
-    require_allowed_properties(key, {L"scanCode", L"extended", L"modifiers"});
-    return InputKeyIdentity{get_scan_code(key), key.GetNamedBoolean(L"extended"),
-                            parse_modifiers(key.GetNamedString(L"modifiers"))};
+    require_allowed_properties(key, {L"device", L"code", L"extended", L"modifiers"});
+    return InputKeyIdentity{parse_device(key.GetNamedString(L"device")), get_input_code(key),
+                            key.GetNamedBoolean(L"extended"), parse_modifiers(key.GetNamedString(L"modifiers"))};
 }
 
 [[nodiscard]] InputActivationMode parse_activation_mode(const std::wstring_view value)
@@ -206,33 +221,44 @@ void require_allowed_properties(const JsonObject &object, const std::initializer
 
 [[nodiscard]] bool is_modifier_key(const InputKeyIdentity &key) noexcept
 {
-    return (!key.extended &&
-            (key.scan_code == 0x1DU || key.scan_code == 0x2AU || key.scan_code == 0x36U || key.scan_code == 0x38U)) ||
-           (key.extended &&
-            (key.scan_code == 0x1DU || key.scan_code == 0x38U || key.scan_code == 0x5BU || key.scan_code == 0x5CU));
+    if (key.device != InputDeviceKind::keyboard)
+    {
+        return false;
+    }
+
+    return (!key.extended && (key.code == 0x1DU || key.code == 0x2AU || key.code == 0x36U || key.code == 0x38U)) ||
+           (key.extended && (key.code == 0x1DU || key.code == 0x38U || key.code == 0x5BU || key.code == 0x5CU));
 }
 
 [[nodiscard]] bool is_system_reserved(const InputKeyIdentity &key) noexcept
 {
+    if (key.device != InputDeviceKind::keyboard)
+    {
+        return false;
+    }
+
     constexpr std::uint16_t f12_scan_code = 0x58U;
-    const bool primary_windows_key = key.extended && (key.scan_code == 0x5BU || key.scan_code == 0x5CU);
-    if (has_modifier(key.modifiers, InputModifiers::win) || primary_windows_key || key.scan_code == f12_scan_code)
+    const bool primary_windows_key = key.extended && (key.code == 0x5BU || key.code == 0x5CU);
+    if (has_modifier(key.modifiers, InputModifiers::win) || primary_windows_key || key.code == f12_scan_code)
     {
         return true;
     }
 
     const bool alt = has_modifier(key.modifiers, InputModifiers::alt);
     const bool ctrl = has_modifier(key.modifiers, InputModifiers::ctrl);
-    if ((alt && (key.scan_code == 0x0FU || key.scan_code == 0x01U)) || (ctrl && !alt && key.scan_code == 0x01U))
+    if ((alt && (key.code == 0x0FU || key.code == 0x01U)) || (ctrl && !alt && key.code == 0x01U))
     {
         return true;
     }
-    return ctrl && alt && key.extended && key.scan_code == 0x53U;
+    return ctrl && alt && key.extended && key.code == 0x53U;
 }
 
 void validate_key(const InputKeyIdentity &key)
 {
-    if (key.scan_code == 0U || (key.modifiers & kKnownModifiers) != key.modifiers)
+    const bool valid_mouse_button = key.code >= static_cast<std::uint16_t>(InputMouseButton::left) &&
+                                    key.code <= static_cast<std::uint16_t>(InputMouseButton::x2);
+    if (key.code == 0U || (key.modifiers & kKnownModifiers) != key.modifiers ||
+        (key.device == InputDeviceKind::mouse && (!valid_mouse_button || key.extended)))
     {
         throw std::invalid_argument("Input key identity is invalid.");
     }
@@ -266,7 +292,12 @@ void validate_key(const InputKeyIdentity &key)
 
 [[nodiscard]] UINT virtual_key(const InputKeyIdentity &key)
 {
-    const UINT encoded_scan_code = key.extended ? static_cast<UINT>(key.scan_code) | 0xE000U : key.scan_code;
+    if (key.device != InputDeviceKind::keyboard)
+    {
+        throw std::invalid_argument("Only keyboard inputs can be registered with RegisterHotKey.");
+    }
+
+    const UINT encoded_scan_code = key.extended ? static_cast<UINT>(key.code) | 0xE000U : key.code;
     const UINT result = MapVirtualKeyW(encoded_scan_code, MAPVK_VSC_TO_VK_EX);
     if (result == 0U)
     {
@@ -285,8 +316,9 @@ void add_action(InputBindingPlan &plan, std::vector<InputKeyIdentity> &used_keys
     }
     used_keys.push_back(key);
 
-    const bool requires_raw_input =
-        action.operation == InputSwitchOperation::hold || key.modifiers == InputModifiers::none;
+    const bool requires_raw_input = key.device == InputDeviceKind::mouse ||
+                                    action.operation == InputSwitchOperation::hold ||
+                                    key.modifiers == InputModifiers::none;
     if (requires_raw_input)
     {
         plan.raw_bindings.push_back({key, action});
@@ -343,34 +375,76 @@ void add_switch_binding(InputBindingPlan &plan, std::vector<InputKeyIdentity> &u
 
 [[nodiscard]] InputPhysicalKey physical_key(const InputKeyIdentity &key) noexcept
 {
-    return {key.scan_code, key.extended};
+    return {key.device, key.code, key.extended};
 }
 
 [[nodiscard]] std::string describe_key(const InputKeyIdentity &key)
 {
-    return std::format("scanCode=0x{:04X}, extended={}, modifiers=0x{:02X}", key.scan_code, key.extended,
+    return std::format("device={}, code=0x{:04X}, extended={}, modifiers=0x{:02X}",
+                       key.device == InputDeviceKind::keyboard ? "keyboard" : "mouse", key.code, key.extended,
                        static_cast<std::uint8_t>(key.modifiers));
 }
 
 [[nodiscard]] InputModifiers modifier_for_key(const InputPhysicalKey key) noexcept
 {
-    if (key.scan_code == 0x1DU)
+    if (key.device != InputDeviceKind::keyboard)
+    {
+        return InputModifiers::none;
+    }
+    if (key.code == 0x1DU)
     {
         return InputModifiers::ctrl;
     }
-    if (!key.extended && (key.scan_code == 0x2AU || key.scan_code == 0x36U))
+    if (!key.extended && (key.code == 0x2AU || key.code == 0x36U))
     {
         return InputModifiers::shift;
     }
-    if (key.scan_code == 0x38U)
+    if (key.code == 0x38U)
     {
         return InputModifiers::alt;
     }
-    if (key.extended && (key.scan_code == 0x5BU || key.scan_code == 0x5CU))
+    if (key.extended && (key.code == 0x5BU || key.code == 0x5CU))
     {
         return InputModifiers::win;
     }
     return InputModifiers::none;
+}
+
+[[nodiscard]] JsonObject select_active_profile(const JsonObject &root)
+{
+    const JsonArray profiles = root.GetNamedArray(L"profiles");
+    if (profiles.Size() == 0U)
+    {
+        throw std::invalid_argument("Input configuration requires at least one profile.");
+    }
+
+    std::wstring selected_id;
+    const JsonArray sets = root.GetNamedArray(L"profileSets");
+    for (const auto &item : sets)
+    {
+        const IJsonValue selected = item.GetObject().GetNamedValue(L"selectedProfileId");
+        if (selected.ValueType() == JsonValueType::String)
+        {
+            selected_id = selected.GetString().c_str();
+            break;
+        }
+    }
+
+    if (selected_id.empty())
+    {
+        return profiles.GetObjectAt(0U);
+    }
+
+    for (const auto &item : profiles)
+    {
+        const JsonObject profile = item.GetObject();
+        if (profile.GetNamedString(L"id") == selected_id)
+        {
+            return profile;
+        }
+    }
+
+    throw std::invalid_argument("Selected input profile does not exist.");
 }
 } // namespace
 
@@ -382,10 +456,17 @@ InputConfiguration parse_input_configuration(const std::string_view snapshot_jso
     }
 
     const JsonObject root = JsonObject::Parse(winrt::to_hstring(snapshot_json));
-    const IJsonValue switches_value = root.GetNamedValue(L"switches");
+    const double schema_version = root.GetNamedNumber(L"schemaVersion");
+    if (!std::isfinite(schema_version) || schema_version != 3.0)
+    {
+        throw std::invalid_argument("Input configuration schema version is not supported.");
+    }
+
+    const JsonObject profile = select_active_profile(root);
+    const IJsonValue switches_value = profile.GetNamedValue(L"switches");
     if (switches_value.ValueType() != JsonValueType::Object)
     {
-        throw std::invalid_argument("Input configuration requires a switches object.");
+        throw std::invalid_argument("Active profile requires a switches object.");
     }
 
     const JsonObject switches = switches_value.GetObject();
@@ -426,7 +507,7 @@ bool evaluate_input_visibility(const InputVisibilityRule rule, const bool switch
     return false;
 }
 
-std::optional<RawKeyboardTransition> parse_raw_keyboard_input(const std::span<const std::byte> payload)
+std::vector<RawInputTransition> parse_raw_input(const std::span<const std::byte> payload)
 {
     if (payload.size() < sizeof(RAWINPUTHEADER))
     {
@@ -435,34 +516,63 @@ std::optional<RawKeyboardTransition> parse_raw_keyboard_input(const std::span<co
 
     RAWINPUTHEADER header{};
     std::memcpy(&header, payload.data(), sizeof(header));
-    if (header.dwType != RIM_TYPEKEYBOARD)
+    constexpr std::size_t data_offset = offsetof(RAWINPUT, data);
+    if (header.dwType == RIM_TYPEKEYBOARD)
     {
-        return std::nullopt;
+        if (payload.size() < data_offset + sizeof(RAWKEYBOARD))
+        {
+            throw std::invalid_argument("Raw Input keyboard payload is incomplete.");
+        }
+
+        RAWKEYBOARD keyboard{};
+        std::memcpy(&keyboard, payload.data() + data_offset, sizeof(keyboard));
+        std::uint16_t scan_code = keyboard.MakeCode;
+        bool extended = (keyboard.Flags & (RI_KEY_E0 | RI_KEY_E1)) != 0U;
+        if (scan_code == 0U)
+        {
+            const UINT mapped = MapVirtualKeyW(keyboard.VKey, MAPVK_VK_TO_VSC_EX);
+            scan_code = static_cast<std::uint16_t>(mapped & 0xFFU);
+            extended = extended || (mapped & 0xFF00U) != 0U;
+        }
+        if (scan_code == 0U)
+        {
+            return {};
+        }
+
+        return {{{InputDeviceKind::keyboard, scan_code, extended}, (keyboard.Flags & RI_KEY_BREAK) == 0U}};
     }
 
-    constexpr std::size_t keyboard_offset = offsetof(RAWINPUT, data);
-    constexpr std::size_t keyboard_payload_size = keyboard_offset + sizeof(RAWKEYBOARD);
-    if (payload.size() < keyboard_payload_size)
+    if (header.dwType != RIM_TYPEMOUSE)
     {
-        throw std::invalid_argument("Raw Input keyboard payload is incomplete.");
+        return {};
+    }
+    if (payload.size() < data_offset + sizeof(RAWMOUSE))
+    {
+        throw std::invalid_argument("Raw Input mouse payload is incomplete.");
     }
 
-    RAWKEYBOARD keyboard{};
-    std::memcpy(&keyboard, payload.data() + keyboard_offset, sizeof(keyboard));
-    std::uint16_t scan_code = keyboard.MakeCode;
-    bool extended = (keyboard.Flags & (RI_KEY_E0 | RI_KEY_E1)) != 0U;
-    if (scan_code == 0U)
+    RAWMOUSE mouse{};
+    std::memcpy(&mouse, payload.data() + data_offset, sizeof(mouse));
+    const USHORT flags = mouse.usButtonFlags;
+    std::vector<RawInputTransition> transitions;
+    const auto append =
+        [&transitions, flags](const USHORT down_flag, const USHORT up_flag, const InputMouseButton button)
     {
-        const UINT mapped = MapVirtualKeyW(keyboard.VKey, MAPVK_VK_TO_VSC_EX);
-        scan_code = static_cast<std::uint16_t>(mapped & 0xFFU);
-        extended = extended || (mapped & 0xFF00U) != 0U;
-    }
-    if (scan_code == 0U)
-    {
-        return std::nullopt;
-    }
-
-    return RawKeyboardTransition{{scan_code, extended}, (keyboard.Flags & RI_KEY_BREAK) == 0U};
+        if ((flags & down_flag) != 0U)
+        {
+            transitions.push_back({{InputDeviceKind::mouse, static_cast<std::uint16_t>(button), false}, true});
+        }
+        if ((flags & up_flag) != 0U)
+        {
+            transitions.push_back({{InputDeviceKind::mouse, static_cast<std::uint16_t>(button), false}, false});
+        }
+    };
+    append(RI_MOUSE_LEFT_BUTTON_DOWN, RI_MOUSE_LEFT_BUTTON_UP, InputMouseButton::left);
+    append(RI_MOUSE_RIGHT_BUTTON_DOWN, RI_MOUSE_RIGHT_BUTTON_UP, InputMouseButton::right);
+    append(RI_MOUSE_MIDDLE_BUTTON_DOWN, RI_MOUSE_MIDDLE_BUTTON_UP, InputMouseButton::middle);
+    append(RI_MOUSE_BUTTON_4_DOWN, RI_MOUSE_BUTTON_4_UP, InputMouseButton::x1);
+    append(RI_MOUSE_BUTTON_5_DOWN, RI_MOUSE_BUTTON_5_UP, InputMouseButton::x2);
+    return transitions;
 }
 
 InputStateSnapshot HotkeyStateMachine::configure(const InputConfiguration &configuration,
@@ -689,6 +799,61 @@ class GlobalInputService::Impl
         return CallNextHookEx(nullptr, code, word_parameter, long_parameter);
     }
 
+    static LRESULT CALLBACK low_level_mouse_proc(const int code, const WPARAM word_parameter,
+                                                 const LPARAM long_parameter) noexcept
+    {
+        Impl *service = hook_owner_.load(std::memory_order_acquire);
+        if (code == HC_ACTION && service != nullptr)
+        {
+            const auto *event = reinterpret_cast<const MSLLHOOKSTRUCT *>(long_parameter);
+            if ((event->flags & LLMHF_INJECTED) == 0U)
+            {
+                InputMouseButton button{};
+                bool pressed = false;
+                bool recognized = true;
+                switch (word_parameter)
+                {
+                case WM_LBUTTONDOWN:
+                    button = InputMouseButton::left;
+                    pressed = true;
+                    break;
+                case WM_LBUTTONUP:
+                    button = InputMouseButton::left;
+                    break;
+                case WM_RBUTTONDOWN:
+                    button = InputMouseButton::right;
+                    pressed = true;
+                    break;
+                case WM_RBUTTONUP:
+                    button = InputMouseButton::right;
+                    break;
+                case WM_MBUTTONDOWN:
+                    button = InputMouseButton::middle;
+                    pressed = true;
+                    break;
+                case WM_MBUTTONUP:
+                    button = InputMouseButton::middle;
+                    break;
+                case WM_XBUTTONDOWN:
+                case WM_XBUTTONUP:
+                    button = HIWORD(event->mouseData) == XBUTTON1 ? InputMouseButton::x1 : InputMouseButton::x2;
+                    pressed = word_parameter == WM_XBUTTONDOWN;
+                    break;
+                default:
+                    recognized = false;
+                    break;
+                }
+
+                const HWND window = service->window_.load(std::memory_order_acquire);
+                if (recognized && window != nullptr)
+                {
+                    PostMessageW(window, kHookMouseMessage, static_cast<WPARAM>(button), pressed ? 1 : 0);
+                }
+            }
+        }
+        return CallNextHookEx(nullptr, code, word_parameter, long_parameter);
+    }
+
     void signal_startup(std::exception_ptr failure = nullptr)
     {
         {
@@ -724,7 +889,7 @@ class GlobalInputService::Impl
             }
             window_.store(window, std::memory_order_release);
 
-            initialize_keyboard_backend(window);
+            initialize_input_backend(window);
             if (!WTSRegisterSessionNotification(window, NOTIFY_FOR_THIS_SESSION))
             {
                 throw_last_error("WTSRegisterSessionNotification");
@@ -776,30 +941,48 @@ class GlobalInputService::Impl
         }
     }
 
-    void initialize_keyboard_backend(_In_ const HWND window)
+    void initialize_input_backend(_In_ const HWND window)
     {
-        RAWINPUTDEVICE keyboard{};
-        keyboard.usUsagePage = 0x01U;
-        keyboard.usUsage = 0x06U;
-        keyboard.dwFlags = RIDEV_INPUTSINK | RIDEV_DEVNOTIFY;
-        keyboard.hwndTarget = window;
-        if (RegisterRawInputDevices(&keyboard, 1U, sizeof(keyboard)))
+        std::array<RAWINPUTDEVICE, 2> devices{};
+        devices[0].usUsagePage = 0x01U;
+        devices[0].usUsage = 0x06U;
+        devices[0].dwFlags = RIDEV_INPUTSINK | RIDEV_DEVNOTIFY;
+        devices[0].hwndTarget = window;
+        devices[1].usUsagePage = 0x01U;
+        devices[1].usUsage = 0x02U;
+        devices[1].dwFlags = RIDEV_INPUTSINK | RIDEV_DEVNOTIFY;
+        devices[1].hwndTarget = window;
+        if (RegisterRawInputDevices(devices.data(), static_cast<UINT>(devices.size()), sizeof(RAWINPUTDEVICE)))
         {
             raw_input_registered_ = true;
             log_diagnostic(DiagnosticLevel::information, "input.raw_input_ready",
-                           "Raw Input keyboard capture is active.");
+                           "Raw Input keyboard and mouse capture is active.");
             return;
         }
 
         hook_owner_.store(this, std::memory_order_release);
         low_level_hook_ = SetWindowsHookExW(WH_KEYBOARD_LL, low_level_keyboard_proc, GetModuleHandleW(nullptr), 0U);
-        if (low_level_hook_ == nullptr)
+        const DWORD keyboard_hook_error = low_level_hook_ == nullptr ? GetLastError() : ERROR_SUCCESS;
+        low_level_mouse_hook_ = SetWindowsHookExW(WH_MOUSE_LL, low_level_mouse_proc, GetModuleHandleW(nullptr), 0U);
+        const DWORD mouse_hook_error = low_level_mouse_hook_ == nullptr ? GetLastError() : ERROR_SUCCESS;
+        if (low_level_hook_ == nullptr || low_level_mouse_hook_ == nullptr)
         {
+            if (low_level_hook_ != nullptr)
+            {
+                UnhookWindowsHookEx(low_level_hook_);
+                low_level_hook_ = nullptr;
+            }
+            if (low_level_mouse_hook_ != nullptr)
+            {
+                UnhookWindowsHookEx(low_level_mouse_hook_);
+                low_level_mouse_hook_ = nullptr;
+            }
             hook_owner_.store(nullptr, std::memory_order_release);
-            throw_last_error("Register Raw Input and low-level keyboard fallback");
+            SetLastError(keyboard_hook_error != ERROR_SUCCESS ? keyboard_hook_error : mouse_hook_error);
+            throw_last_error("Register Raw Input and low-level input fallback");
         }
         log_diagnostic(DiagnosticLevel::warning, "input.raw_input_fallback",
-                       "Raw Input registration failed; the low-level keyboard hook fallback is active.");
+                       "Raw Input registration failed; low-level keyboard and mouse hook fallback is active.");
     }
 
     void cleanup() noexcept
@@ -818,12 +1001,15 @@ class GlobalInputService::Impl
         }
         if (raw_input_registered_)
         {
-            RAWINPUTDEVICE keyboard{};
-            keyboard.usUsagePage = 0x01U;
-            keyboard.usUsage = 0x06U;
-            keyboard.dwFlags = RIDEV_REMOVE;
-            keyboard.hwndTarget = nullptr;
-            static_cast<void>(RegisterRawInputDevices(&keyboard, 1U, sizeof(keyboard)));
+            std::array<RAWINPUTDEVICE, 2> devices{};
+            devices[0].usUsagePage = 0x01U;
+            devices[0].usUsage = 0x06U;
+            devices[0].dwFlags = RIDEV_REMOVE;
+            devices[1].usUsagePage = 0x01U;
+            devices[1].usUsage = 0x02U;
+            devices[1].dwFlags = RIDEV_REMOVE;
+            static_cast<void>(
+                RegisterRawInputDevices(devices.data(), static_cast<UINT>(devices.size()), sizeof(RAWINPUTDEVICE)));
             raw_input_registered_ = false;
         }
         if (low_level_hook_ != nullptr)
@@ -832,6 +1018,12 @@ class GlobalInputService::Impl
             UnhookWindowsHookEx(low_level_hook_);
             low_level_hook_ = nullptr;
         }
+        if (low_level_mouse_hook_ != nullptr)
+        {
+            UnhookWindowsHookEx(low_level_mouse_hook_);
+            low_level_mouse_hook_ = nullptr;
+        }
+        hook_owner_.store(nullptr, std::memory_order_release);
         if (window != nullptr && IsWindow(window))
         {
             DestroyWindow(window);
@@ -859,7 +1051,13 @@ class GlobalInputService::Impl
             const std::uint16_t scan_code = static_cast<std::uint16_t>(long_parameter & 0xFFFF);
             const bool extended = (long_parameter & (1 << 16)) != 0;
             const bool pressed = (long_parameter & (1 << 17)) != 0;
-            handle_keyboard_transition({scan_code, extended}, pressed);
+            handle_input_transition({InputDeviceKind::keyboard, scan_code, extended}, pressed);
+            return 0;
+        }
+        case kHookMouseMessage:
+        {
+            handle_input_transition({InputDeviceKind::mouse, static_cast<std::uint16_t>(word_parameter), false},
+                                    long_parameter != 0);
             return 0;
         }
         case WM_HOTKEY:
@@ -1009,23 +1207,20 @@ class GlobalInputService::Impl
         const UINT received = GetRawInputData(raw_input, RID_INPUT, buffer.data(), &size, sizeof(RAWINPUTHEADER));
         if (received == static_cast<UINT>(-1))
         {
-            throw_last_error("GetRawInputData keyboard");
+            throw_last_error("GetRawInputData payload");
         }
         if (received != size)
         {
-            throw NativeError(ERROR_INVALID_DATA, "GetRawInputData keyboard length");
+            throw NativeError(ERROR_INVALID_DATA, "GetRawInputData payload length");
         }
 
-        const std::optional<RawKeyboardTransition> transition = parse_raw_keyboard_input(buffer);
-        if (!transition)
+        for (const RawInputTransition &transition : parse_raw_input(buffer))
         {
-            return;
+            handle_input_transition(transition.key, transition.pressed);
         }
-
-        handle_keyboard_transition(transition->key, transition->pressed);
     }
 
-    void handle_keyboard_transition(const InputPhysicalKey physical, const bool pressed)
+    void handle_input_transition(const InputPhysicalKey physical, const bool pressed)
     {
         const InputModifiers current_modifiers = modifiers();
         const InputModifiers key_modifier = modifier_for_key(physical);
@@ -1046,8 +1241,8 @@ class GlobalInputService::Impl
             }
         }
 
-        if (const auto update =
-                state_machine_.handle_key({physical.scan_code, physical.extended, event_modifiers}, pressed))
+        if (const auto update = state_machine_.handle_key(
+                {physical.device, physical.code, physical.extended, event_modifiers}, pressed))
         {
             publish(*update);
         }
@@ -1089,6 +1284,7 @@ class GlobalInputService::Impl
     InputBindingPlan active_plan_;
     std::vector<InputPhysicalKey> modifier_keys_;
     HHOOK low_level_hook_ = nullptr;
+    HHOOK low_level_mouse_hook_ = nullptr;
     bool ready_ = false;
     bool configured_ = false;
     bool raw_input_registered_ = false;

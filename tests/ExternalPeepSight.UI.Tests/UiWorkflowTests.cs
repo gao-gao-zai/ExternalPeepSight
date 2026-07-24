@@ -29,7 +29,7 @@ public sealed class UiWorkflowTests
 
         window.Show();
 
-        Assert.Equal(7, context.ViewModel.Navigation.Count);
+        Assert.Equal(5, context.ViewModel.Navigation.Count);
         foreach (NavigationItemViewModel item in context.ViewModel.Navigation)
         {
             context.ViewModel.SelectedNavigation = item;
@@ -58,6 +58,51 @@ public sealed class UiWorkflowTests
         Assert.Equal(
             MonitorSelectionMode.Explicit,
             context.Workspace.Document.MonitorSelection.Mode);
+    }
+
+    [Fact]
+    public void OverlayModeSwitchesTheActiveEditorConfiguration()
+    {
+        using TestContext context = CreateContext();
+        CrosshairEditorViewModel editor = context.ViewModel.Crosshair;
+        Guid assetId = Guid.NewGuid();
+        context.Workspace.UpdateDocument(document => document with
+        {
+            Assets =
+            [
+                new AssetReference(assetId, "test.png", "image/png", 1, new string('A', 64)),
+            ],
+            Profiles =
+            [
+                document.Profiles[0] with
+                {
+                    Image = document.Profiles[0].Image with { AssetId = assetId },
+                },
+            ],
+        });
+
+        editor.IsImageMode = true;
+
+        Assert.Equal(OverlayMode.Image, context.Workspace.SelectedProfile.ActiveMode);
+        Assert.True(editor.IsImageMode);
+        Assert.False(editor.IsCrosshairMode);
+
+        editor.Image.Scale = 1.75;
+
+        Assert.Equal(1.75, context.Workspace.SelectedProfile.Image.Scale);
+    }
+
+    [Fact]
+    public void CrosshairEditorTabsSwitchBetweenOverlayAndSwitchConfiguration()
+    {
+        using TestContext context = CreateContext();
+        CrosshairEditorViewModel editor = context.ViewModel.Crosshair;
+
+        editor.IsSwitchesTab = true;
+
+        Assert.True(editor.IsSwitchesTab);
+        Assert.False(editor.IsOverlayTab);
+        Assert.Same(editor.Switches, context.ViewModel.Switches);
     }
 
     [AvaloniaFact(
@@ -94,16 +139,37 @@ public sealed class UiWorkflowTests
     public void DuplicateHotkeyIsRejectedWithoutReplacingLastValidBinding()
     {
         using TestContext context = CreateContext();
-        var key = new KeyIdentity(0x1E, false, KeyModifiers.Ctrl);
+        var key = new KeyIdentity(InputDeviceKind.Keyboard, 0x1E, false, KeyModifiers.Ctrl);
 
         context.ViewModel.Switches.SwitchA.Mode = HotkeyActivationMode.Toggle;
         context.ViewModel.Switches.SwitchA.ToggleKey = key;
         context.ViewModel.Switches.SwitchB.Mode = HotkeyActivationMode.Toggle;
         context.ViewModel.Switches.SwitchB.ToggleKey = key;
 
-        Assert.Equal(key, context.Workspace.Document.Switches.SwitchA.ToggleKey);
-        Assert.Equal(HotkeyActivationMode.Unbound, context.Workspace.Document.Switches.SwitchB.Mode);
+        Assert.Equal(key, context.Workspace.SelectedProfile.Switches.SwitchA.ToggleKey);
+        Assert.Equal(HotkeyActivationMode.Unbound, context.Workspace.SelectedProfile.Switches.SwitchB.Mode);
         Assert.True(context.ViewModel.Switches.SwitchB.HasConflict);
+    }
+
+    [Fact]
+    public void EditingHotkeyChangesOnlySelectedProfile()
+    {
+        using TestContext context = CreateContext();
+        Guid firstProfileId = context.Workspace.SelectedProfileId;
+        context.Workspace.AddProfile("Second");
+        Guid secondProfileId = context.Workspace.SelectedProfileId;
+        var key = new KeyIdentity(InputDeviceKind.Keyboard, 0x31, false, KeyModifiers.None);
+
+        context.ViewModel.Switches.SwitchA.Mode = HotkeyActivationMode.Toggle;
+        context.ViewModel.Switches.SwitchA.ToggleKey = key;
+        context.Workspace.SelectProfile(firstProfileId);
+
+        Profile first = context.Workspace.Document.Profiles.Single(profile => profile.Id == firstProfileId);
+        Profile second = context.Workspace.Document.Profiles.Single(profile => profile.Id == secondProfileId);
+        Assert.Equal(HotkeyActivationMode.Unbound, first.Switches.SwitchA.Mode);
+        Assert.Null(first.Switches.SwitchA.ToggleKey);
+        Assert.Equal(HotkeyActivationMode.Toggle, second.Switches.SwitchA.Mode);
+        Assert.Equal(key, second.Switches.SwitchA.ToggleKey);
     }
 
     [Fact]
@@ -164,6 +230,21 @@ public sealed class UiWorkflowTests
         Assert.Equal(field.PlaceholderText, field.Content);
 
         window.Close();
+    }
+
+    [Fact]
+    public void MouseHotkeyHasRecognizableDisplayText()
+    {
+        var field = new HotkeyCaptureBox
+        {
+            Value = new KeyIdentity(
+                InputDeviceKind.Mouse,
+                (ushort)InputMouseButton.X1,
+                false,
+                KeyModifiers.Ctrl),
+        };
+
+        Assert.Equal("Ctrl + Mouse X1", field.Content);
     }
 
     [Fact]
