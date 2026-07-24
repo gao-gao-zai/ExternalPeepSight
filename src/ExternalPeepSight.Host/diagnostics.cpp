@@ -2,13 +2,56 @@
 
 #include <dxgi.h>
 
+#include <filesystem>
 #include <format>
+#include <fstream>
+#include <mutex>
 #include <sstream>
 
 namespace external_peepsight
 {
 namespace
 {
+constexpr std::uintmax_t kMaximumLogBytes = 2U * 1024U * 1024U;
+
+[[nodiscard]] std::filesystem::path diagnostic_log_path()
+{
+    std::wstring local_app_data(32'768U, L'\0');
+    const DWORD length =
+        GetEnvironmentVariableW(L"LOCALAPPDATA", local_app_data.data(), static_cast<DWORD>(local_app_data.size()));
+    if (length == 0U || length >= local_app_data.size())
+    {
+        return {};
+    }
+
+    local_app_data.resize(length);
+    return std::filesystem::path(local_app_data) / L"ExternalPeepSight" / L"logs" / L"host.log";
+}
+
+void append_diagnostic_record(const std::string_view record)
+{
+    static std::mutex log_mutex;
+    std::scoped_lock lock(log_mutex);
+
+    const std::filesystem::path path = diagnostic_log_path();
+    if (path.empty())
+    {
+        return;
+    }
+
+    std::filesystem::create_directories(path.parent_path());
+    if (std::filesystem::exists(path) && std::filesystem::file_size(path) >= kMaximumLogBytes)
+    {
+        const std::filesystem::path backup = path.parent_path() / L"host.log.1";
+        std::error_code ignored;
+        std::filesystem::remove(backup, ignored);
+        std::filesystem::rename(path, backup);
+    }
+
+    std::ofstream output(path, std::ios::binary | std::ios::app);
+    output.write(record.data(), static_cast<std::streamsize>(record.size()));
+}
+
 [[nodiscard]] std::string escape_json(const std::string_view value)
 {
     std::string result;
@@ -107,9 +150,15 @@ bool NativeError::is_device_lost() const noexcept
 std::string format_diagnostic(const DiagnosticLevel level, const std::string_view event_name,
                               const std::string_view message, const std::optional<NativeErrorStatus> status)
 {
+    SYSTEMTIME time{};
+    GetSystemTime(&time);
     std::ostringstream output;
-    output << "{\"component\":\"ExternalPeepSight.Host\",\"level\":\"" << level_name(level) << "\",\"event\":\""
-           << escape_json(event_name) << "\",\"message\":\"" << escape_json(message) << '"';
+    output << "{\"timestampUtc\":\""
+           << std::format("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z", time.wYear, time.wMonth, time.wDay, time.wHour,
+                          time.wMinute, time.wSecond, time.wMilliseconds)
+           << "\",\"processId\":" << GetCurrentProcessId() << ",\"component\":\"ExternalPeepSight.Host\",\"level\":\""
+           << level_name(level) << "\",\"event\":\"" << escape_json(event_name) << "\",\"message\":\""
+           << escape_json(message) << '"';
     if (status.has_value())
     {
         output << ",\"nativeDomain\":\"" << domain_name(status->domain) << "\",\"nativeCode\":\"0x" << std::hex
@@ -126,6 +175,7 @@ void log_diagnostic(const DiagnosticLevel level, const std::string_view event_na
     {
         const std::string record = format_diagnostic(level, event_name, message, status);
         OutputDebugStringA(record.c_str());
+        append_diagnostic_record(record);
     }
     catch (...)
     {

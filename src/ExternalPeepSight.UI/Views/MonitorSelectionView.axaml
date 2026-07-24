@@ -1,0 +1,109 @@
+<UserControl
+    x:Class="ExternalPeepSight.UI.Views.MonitorSelectionView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:ExternalPeepSight.UI.ViewModels"
+    x:DataType="vm:MonitorSelectionViewModel">
+    <Grid Margin="24" RowDefinitions="Auto,16,*">
+        <TextBlock Classes="page-title" Text="{DynamicResource Loc.Navigation.Monitors}" />
+        <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel MaxWidth="860" HorizontalAlignment="Stretch" Spacing="16">
+                <Border Classes="surface" Padding="20">
+                    <StackPanel Spacing="14">
+                        <TextBlock Classes="section-title" Text="{DynamicResource Loc.Monitor.Mode}" />
+                        <Grid ColumnDefinitions="*,8,*,8,*">
+                            <RadioButton
+                                Classes="segment"
+                                Content="{DynamicResource Loc.Monitor.All}"
+                                GroupName="MonitorMode"
+                                IsChecked="{Binding IsAllMode, Mode=TwoWay}" />
+                            <RadioButton
+                                Grid.Column="2"
+                                Classes="segment"
+                                Content="{DynamicResource Loc.Monitor.Explicit}"
+                                GroupName="MonitorMode"
+                                IsChecked="{Binding IsExplicitMode, Mode=TwoWay}" />
+                            <RadioButton
+                                Grid.Column="4"
+                                Classes="segment"
+                                Content="{DynamicResource Loc.Monitor.Focus}"
+                                GroupName="MonitorMode"
+                                IsChecked="{Binding IsFocusMode, Mode=TwoWay}" />
+                        </Grid>
+                        <Grid IsVisible="{Binding IsFocus}" ColumnDefinitions="180,320">
+                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Monitor.FocusSource}" />
+                            <ComboBox
+                                Grid.Column="1"
+                                x:CompileBindings="False"
+                                ItemsSource="{Binding FocusSources}"
+                                DisplayMemberBinding="{Binding Name}"
+                                SelectedValue="{Binding FocusSource, Mode=TwoWay}"
+                                SelectedValueBinding="{Binding Value}" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Border Classes="surface" IsVisible="{Binding IsExplicit}">
+                    <Grid RowDefinitions="54,*">
+                        <Grid
+                            Margin="18,0"
+                            ColumnDefinitions="*,Auto">
+                            <TextBlock
+                                VerticalAlignment="Center"
+                                Classes="section-title"
+                                Text="{DynamicResource Loc.Monitor.Explicit}" />
+                            <Button
+                                Grid.Column="1"
+                                Classes="icon"
+                                Command="{Binding RefreshCommand}"
+                                Content="&#xE72C;"
+                                ToolTip.Tip="{DynamicResource Loc.Common.Refresh}" />
+                        </Grid>
+                        <ItemsControl Grid.Row="1" ItemsSource="{Binding Monitors}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:MonitorItemViewModel">
+                                    <Border
+                                        Padding="18,12"
+                                        BorderBrush="{DynamicResource AppBorderBrush}"
+                                        BorderThickness="0,1,0,0">
+                                        <Grid ColumnDefinitions="Auto,12,*,Auto">
+                                            <CheckBox
+                                                VerticalAlignment="Center"
+                                                IsChecked="{Binding IsSelected, Mode=TwoWay}" />
+                                            <StackPanel Grid.Column="2" Spacing="2">
+                                                <TextBlock FontWeight="SemiBold" Text="{Binding Monitor.DisplayName}" />
+                                                <TextBlock Classes="secondary" Text="{Binding Bounds}" />
+                                                <TextBlock
+                                                    Classes="secondary"
+                                                    FontFamily="Consolas"
+                                                    FontSize="11"
+                                                    Text="{Binding Monitor.Id}"
+                                                    TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <Border
+                                                Grid.Column="3"
+                                                Padding="8,3"
+                                                VerticalAlignment="Center"
+                                                Background="{DynamicResource AppAccentSoftBrush}"
+                                                CornerRadius="3"
+                                                IsVisible="{Binding Monitor.IsPrimary}">
+                                                <TextBlock
+                                                    FontSize="11"
+                                                    Foreground="{DynamicResource AppAccentBrush}"
+                                                    Text="{DynamicResource Loc.Monitor.Primary}" />
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Grid>
+                </Border>
+                <TextBlock
+                    Classes="secondary"
+                    IsVisible="{Binding !HasMonitors}"
+                    Text="{DynamicResource Loc.Monitor.Empty}" />
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

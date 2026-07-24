@@ -1,0 +1,141 @@
+<UserControl
+    x:Class="ExternalPeepSight.UI.Views.ProfileSetsView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:core="using:ExternalPeepSight.Core"
+    xmlns:vm="using:ExternalPeepSight.UI.ViewModels"
+    x:DataType="vm:ProfileSetsViewModel">
+    <Grid Margin="24" RowDefinitions="Auto,16,*">
+        <TextBlock Classes="page-title" Text="{DynamicResource Loc.Navigation.Profiles}" />
+        <Border Grid.Row="2" Classes="surface">
+            <Grid ColumnDefinitions="220,1,*,1,270">
+                <Grid RowDefinitions="54,*,Auto">
+                    <Grid Margin="14,0" ColumnDefinitions="*,Auto,6,Auto">
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            Classes="section-title"
+                            Text="{DynamicResource Loc.Profiles.Sets}" />
+                        <Button
+                            Grid.Column="1"
+                            Classes="icon"
+                            Command="{Binding AddSetCommand}"
+                            Content="&#xE710;"
+                            ToolTip.Tip="{DynamicResource Loc.Common.Add}" />
+                        <Button
+                            Grid.Column="3"
+                            Classes="icon"
+                            Command="{Binding DeleteSetCommand}"
+                            Content="&#xE74D;"
+                            ToolTip.Tip="{DynamicResource Loc.Common.Delete}" />
+                    </Grid>
+                    <ListBox
+                        Grid.Row="1"
+                        Margin="8,0"
+                        Classes="compact-list"
+                        ItemsSource="{Binding ProfileSets}"
+                        SelectedItem="{Binding SelectedProfileSet, Mode=TwoWay}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="core:ProfileSet">
+                                <Border
+                                    DragDrop.AllowDrop="True"
+                                    DragDrop.DragOver="OnProfileSetDragOver"
+                                    DragDrop.Drop="OnProfileSetDrop">
+                                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <Button
+                        Grid.Row="2"
+                        Margin="14,12,14,14"
+                        Classes="primary"
+                        Command="{Binding ActivateSetCommand}"
+                        Content="{DynamicResource Loc.Profiles.ActivateSet}"
+                        IsEnabled="{Binding !IsActiveSet}" />
+                </Grid>
+
+                <Border Grid.Column="1" Background="{DynamicResource AppBorderBrush}" />
+
+                <Grid Grid.Column="2" RowDefinitions="54,*,Auto">
+                    <Grid Margin="14,0" ColumnDefinitions="*,Auto,6,Auto,6,Auto">
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            Classes="section-title"
+                            Text="{DynamicResource Loc.Profiles.Profiles}" />
+                        <Button
+                            Grid.Column="1"
+                            Classes="icon"
+                            Command="{Binding AddProfileCommand}"
+                            Content="&#xE710;"
+                            ToolTip.Tip="{DynamicResource Loc.Common.Add}" />
+                        <Button
+                            Grid.Column="3"
+                            Classes="icon"
+                            Command="{Binding DuplicateProfileCommand}"
+                            Content="&#xE8C8;"
+                            ToolTip.Tip="{DynamicResource Loc.Common.Duplicate}" />
+                        <Button
+                            Grid.Column="5"
+                            Classes="icon"
+                            Command="{Binding DeleteProfileCommand}"
+                            Content="&#xE74D;"
+                            ToolTip.Tip="{DynamicResource Loc.Common.Delete}" />
+                    </Grid>
+                    <ListBox
+                        Grid.Row="1"
+                        Margin="8,0"
+                        Classes="compact-list"
+                        ItemsSource="{Binding ProfilesInSet}"
+                        SelectedItem="{Binding SelectedProfile, Mode=TwoWay}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="core:Profile">
+                                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <Button
+                        Grid.Row="2"
+                        Margin="14,12,14,14"
+                        Command="{Binding RemoveCommand}"
+                        Content="{DynamicResource Loc.Profiles.Remove}" />
+                </Grid>
+
+                <Border Grid.Column="3" Background="{DynamicResource AppBorderBrush}" />
+
+                <Grid Grid.Column="4" RowDefinitions="54,*,Auto,Auto">
+                    <TextBlock
+                        Margin="14,0"
+                        VerticalAlignment="Center"
+                        Classes="section-title"
+                        Text="{DynamicResource Loc.Profiles.Available}" />
+                    <ListBox
+                        Grid.Row="1"
+                        Margin="8,0"
+                        Classes="compact-list"
+                        ItemsSource="{Binding AvailableProfiles}"
+                        SelectedItem="{Binding SelectedAvailableProfile, Mode=TwoWay}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="core:Profile">
+                                <Border PointerPressed="OnProfilePointerPressed">
+                                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <Button
+                        Grid.Row="2"
+                        Margin="14,12,14,0"
+                        Command="{Binding AssignCommand}"
+                        Content="{DynamicResource Loc.Profiles.Assign}" />
+                    <TextBlock
+                        Grid.Row="3"
+                        Margin="14,8,14,14"
+                        Classes="secondary"
+                        FontSize="11"
+                        Text="{DynamicResource Loc.Profiles.DragHint}"
+                        TextWrapping="Wrap" />
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

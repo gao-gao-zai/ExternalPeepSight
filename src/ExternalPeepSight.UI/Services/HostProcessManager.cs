@@ -1,6 +1,5 @@
 ﻿using System.Diagnostics;
 
-using System.IO;
 
 namespace ExternalPeepSight.UI.Services;
 

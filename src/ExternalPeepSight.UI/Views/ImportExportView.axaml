@@ -1,0 +1,105 @@
+<UserControl
+    x:Class="ExternalPeepSight.UI.Views.ImportExportView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:ExternalPeepSight.UI.ViewModels"
+    x:DataType="vm:ImportExportViewModel">
+    <Grid Margin="24" RowDefinitions="Auto,16,*">
+        <Grid ColumnDefinitions="*,Auto,10,Auto">
+            <TextBlock Classes="page-title" Text="{DynamicResource Loc.Navigation.Transfer}" />
+            <Button
+                Grid.Column="1"
+                Command="{Binding PreviewImportCommand}"
+                Content="{DynamicResource Loc.Transfer.Import}" />
+            <Button
+                Grid.Column="3"
+                Command="{Binding ExportCommand}"
+                Content="{DynamicResource Loc.Transfer.Export}" />
+        </Grid>
+        <Border
+            Grid.Row="2"
+            MaxWidth="780"
+            HorizontalAlignment="Stretch"
+            Classes="surface">
+            <Grid MinHeight="420">
+                <StackPanel
+                    Margin="40"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    IsVisible="{Binding !HasPreview}"
+                    Spacing="14">
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        FontFamily="Segoe Fluent Icons"
+                        FontSize="42"
+                        Foreground="{DynamicResource AppAccentBrush}"
+                        Text="&#xE8B5;" />
+                    <TextBlock
+                        MaxWidth="460"
+                        Classes="secondary"
+                        Text="{Binding Summary}"
+                        TextAlignment="Center"
+                        TextWrapping="Wrap" />
+                    <Button
+                        HorizontalAlignment="Center"
+                        Classes="primary"
+                        Command="{Binding PreviewImportCommand}"
+                        Content="{DynamicResource Loc.Transfer.Import}" />
+                </StackPanel>
+                <Grid
+                    Margin="24"
+                    IsVisible="{Binding HasPreview}"
+                    RowDefinitions="Auto,14,*,18,Auto">
+                    <StackPanel Spacing="5">
+                        <TextBlock Classes="section-title" Text="{DynamicResource Loc.Transfer.Preview}" />
+                        <TextBlock Classes="secondary" Text="{Binding Summary}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <Border
+                        Grid.Row="2"
+                        Background="{DynamicResource AppSubtleSurfaceBrush}"
+                        BorderBrush="{DynamicResource AppBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="4"
+                        Padding="14">
+                        <ScrollViewer>
+                            <ItemsControl ItemsSource="{Binding Conflicts}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock
+                                            Margin="0,0,0,8"
+                                            FontFamily="Consolas"
+                                            FontSize="12"
+                                            Text="{Binding}"
+                                            TextWrapping="Wrap" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Border>
+                    <Grid Grid.Row="4" ColumnDefinitions="*,Auto,10,Auto">
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            Foreground="{DynamicResource AppAccentBrush}"
+                            Text="{Binding Status}" />
+                        <Button
+                            Grid.Column="1"
+                            Command="{Binding CancelImportCommand}"
+                            Content="{DynamicResource Loc.Transfer.Cancel}" />
+                        <Button
+                            Grid.Column="3"
+                            Classes="primary"
+                            Command="{Binding ConfirmImportCommand}"
+                            Content="{DynamicResource Loc.Transfer.Confirm}" />
+                    </Grid>
+                </Grid>
+            </Grid>
+        </Border>
+        <TextBlock
+            Grid.Row="2"
+            Margin="0,12,0,0"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Bottom"
+            Foreground="{DynamicResource AppAccentBrush}"
+            Text="{Binding Status}" />
+    </Grid>
+</UserControl>

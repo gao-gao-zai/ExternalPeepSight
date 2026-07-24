@@ -1601,10 +1601,9 @@ class OverlayApplication
         {
             const bool monitor_selected =
                 options_.display_mode == DisplayMode::all_monitors || overlay->monitor_handle() == selected_monitor;
-            const bool input_visible = !switch_visibility_configured_ || switch_visibility_;
-            const bool visible = overlay->content_kind() == RenderContentKind::toast
-                                     ? monitor_selected
-                                     : monitor_selected && input_visible;
+            const bool visible =
+                evaluate_overlay_visibility(monitor_selected, overlay->content_kind() == RenderContentKind::toast,
+                                            switch_visibility_configured_, switch_visibility_);
             overlay->set_visible(visible);
         }
     }

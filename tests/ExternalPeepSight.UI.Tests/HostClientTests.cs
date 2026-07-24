@@ -130,7 +130,10 @@ public sealed class HostClientTests
         using JsonDocument document = JsonDocument.Parse("{}");
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
-            () => client.ApplySnapshotAsync(version, document.RootElement));
+            () => client.ApplySnapshotAsync(
+                version,
+                document.RootElement,
+                TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -174,9 +177,13 @@ public sealed class HostClientTests
 
         try
         {
-            await Task.Run(client.Start);
-            await hostExited.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            await serverTask.WaitAsync(TimeSpan.FromSeconds(5));
+            await Task.Run(client.Start, TestContext.Current.CancellationToken);
+            await hostExited.Task.WaitAsync(
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken);
+            await serverTask.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken);
         }
         finally
         {
@@ -227,14 +234,21 @@ public sealed class HostClientTests
 
         try
         {
-            await Task.Run(client.Start);
+            await Task.Run(client.Start, TestContext.Current.CancellationToken);
             Assert.Equal(
                 2UL,
-                await synchronizedVersion.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+                await synchronizedVersion.Task.WaitAsync(
+                    TimeSpan.FromSeconds(5),
+                    TestContext.Current.CancellationToken));
 
             using JsonDocument snapshot = JsonDocument.Parse("""{"profile":"integration"}""");
-            await client.ApplySnapshotAsync(3, snapshot.RootElement)
-                .WaitAsync(TimeSpan.FromSeconds(5));
+            await client.ApplySnapshotAsync(
+                    3,
+                    snapshot.RootElement,
+                    TestContext.Current.CancellationToken)
+                .WaitAsync(
+                    TimeSpan.FromSeconds(5),
+                    TestContext.Current.CancellationToken);
         }
         finally
         {
@@ -243,8 +257,12 @@ public sealed class HostClientTests
 
         try
         {
-            await serverObservedDisconnect.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            await serverTask.WaitAsync(TimeSpan.FromSeconds(5));
+            await serverObservedDisconnect.Task.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken);
+            await serverTask.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken);
         }
         finally
         {

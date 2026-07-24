@@ -1,0 +1,122 @@
+<UserControl
+    x:Class="ExternalPeepSight.UI.Views.HotkeyEditorView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:ExternalPeepSight.UI.Controls"
+    xmlns:vm="using:ExternalPeepSight.UI.ViewModels"
+    x:DataType="vm:HotkeyEditorViewModel">
+    <UserControl.Styles>
+        <Style Selector="controls|HotkeyCaptureBox">
+            <Setter Property="MinHeight" Value="38" />
+            <Setter Property="Padding" Value="10,7" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Background" Value="{DynamicResource AppSubtleSurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Foreground" Value="{DynamicResource AppSecondaryTextBrush}" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="{TemplateBinding CornerRadius}"
+                        Padding="{TemplateBinding Padding}">
+                        <Grid ColumnDefinitions="24,*">
+                            <TextBlock
+                                VerticalAlignment="Center"
+                                FontFamily="Segoe Fluent Icons"
+                                FontSize="15"
+                                Text="&#xE765;" />
+                            <ContentPresenter
+                                Grid.Column="1"
+                                VerticalAlignment="Center"
+                                Content="{TemplateBinding Content}"
+                                Foreground="{TemplateBinding Foreground}" />
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="controls|HotkeyCaptureBox:pointerover">
+            <Setter Property="Background" Value="{DynamicResource AppHoverBrush}" />
+        </Style>
+        <Style Selector="controls|HotkeyCaptureBox:focus">
+            <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}" />
+            <Setter Property="BorderThickness" Value="2" />
+        </Style>
+    </UserControl.Styles>
+    <StackPanel Spacing="14">
+        <Grid ColumnDefinitions="*,6,*,6,*,6,*">
+            <RadioButton
+                Classes="segment"
+                Content="{DynamicResource Loc.Hotkey.Unbound}"
+                IsChecked="{Binding IsUnbound, Mode=TwoWay}" />
+            <RadioButton
+                Grid.Column="2"
+                Classes="segment"
+                Content="{DynamicResource Loc.Hotkey.Toggle}"
+                IsChecked="{Binding IsToggleMode, Mode=TwoWay}" />
+            <RadioButton
+                Grid.Column="4"
+                Classes="segment"
+                Content="{DynamicResource Loc.Hotkey.Independent}"
+                IsChecked="{Binding IsIndependentMode, Mode=TwoWay}" />
+            <RadioButton
+                Grid.Column="6"
+                Classes="segment"
+                Content="{DynamicResource Loc.Hotkey.Hold}"
+                IsChecked="{Binding IsHoldMode, Mode=TwoWay}" />
+        </Grid>
+        <Grid IsVisible="{Binding IsToggle}" ColumnDefinitions="140,*">
+            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Hotkey.ToggleKey}" />
+            <controls:HotkeyCaptureBox
+                Grid.Column="1"
+                Classes="hotkey-capture"
+                PlaceholderText="{DynamicResource Loc.Hotkey.Capture}"
+                Value="{Binding ToggleKey, Mode=TwoWay}" />
+        </Grid>
+        <StackPanel IsVisible="{Binding IsIndependent}" Spacing="10">
+            <Grid ColumnDefinitions="140,*">
+                <TextBlock Classes="field-label" Text="{DynamicResource Loc.Hotkey.EnableKey}" />
+                <controls:HotkeyCaptureBox
+                    Grid.Column="1"
+                    Classes="hotkey-capture"
+                    PlaceholderText="{DynamicResource Loc.Hotkey.Capture}"
+                    Value="{Binding EnableKey, Mode=TwoWay}" />
+            </Grid>
+            <Grid ColumnDefinitions="140,*">
+                <TextBlock Classes="field-label" Text="{DynamicResource Loc.Hotkey.DisableKey}" />
+                <controls:HotkeyCaptureBox
+                    Grid.Column="1"
+                    Classes="hotkey-capture"
+                    PlaceholderText="{DynamicResource Loc.Hotkey.Capture}"
+                    Value="{Binding DisableKey, Mode=TwoWay}" />
+            </Grid>
+        </StackPanel>
+        <Grid IsVisible="{Binding IsHold}" ColumnDefinitions="140,*">
+            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Hotkey.HoldKey}" />
+            <controls:HotkeyCaptureBox
+                Grid.Column="1"
+                Classes="hotkey-capture"
+                PlaceholderText="{DynamicResource Loc.Hotkey.Capture}"
+                Value="{Binding HoldKey, Mode=TwoWay}" />
+        </Grid>
+        <Grid ColumnDefinitions="*,Auto">
+            <TextBlock
+                VerticalAlignment="Center"
+                Foreground="{DynamicResource AppErrorBrush}"
+                IsVisible="{Binding HasConflict}"
+                Text="{DynamicResource Loc.Hotkey.Conflict}"
+                TextWrapping="Wrap" />
+            <Button
+                Grid.Column="1"
+                Classes="icon"
+                Command="{Binding ClearCommand}"
+                Content="&#xE74D;"
+                ToolTip.Tip="{DynamicResource Loc.Common.Clear}" />
+        </Grid>
+    </StackPanel>
+</UserControl>

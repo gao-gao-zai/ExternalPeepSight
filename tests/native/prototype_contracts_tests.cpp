@@ -53,6 +53,20 @@ TEST(OverlayWindowContract, UsesRequiredNonActivatingTransparentStyles)
     EXPECT_EQ(HTTRANSPARENT, external_peepsight::overlay_hit_test_result());
 }
 
+TEST(OverlayVisibility, KeepsProfileHiddenUntilConfiguredStateIsAvailable)
+{
+    EXPECT_FALSE(external_peepsight::evaluate_overlay_visibility(true, false, false, true));
+    EXPECT_FALSE(external_peepsight::evaluate_overlay_visibility(true, false, true, false));
+    EXPECT_TRUE(external_peepsight::evaluate_overlay_visibility(true, false, true, true));
+}
+
+TEST(OverlayVisibility, ShowsToastOnlyOnSelectedMonitor)
+{
+    EXPECT_TRUE(external_peepsight::evaluate_overlay_visibility(true, true, false, false));
+    EXPECT_FALSE(external_peepsight::evaluate_overlay_visibility(false, true, true, true));
+    EXPECT_FALSE(external_peepsight::evaluate_overlay_visibility(false, false, true, true));
+}
+
 TEST(OverlayWindowContract, CentersPrototypeBoundsWithoutCoveringTheMonitor)
 {
     const RECT monitor{0, 0, 1920, 1080};

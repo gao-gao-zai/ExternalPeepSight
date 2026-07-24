@@ -4,10 +4,12 @@
 
 #include <windows.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -58,6 +60,17 @@ struct InputPhysicalKey
     bool extended;
 
     bool operator==(const InputPhysicalKey &) const = default;
+};
+
+/// One physical keyboard transition decoded from a Raw Input payload.
+struct RawKeyboardTransition
+{
+    /// Physical key reported by the keyboard device.
+    InputPhysicalKey key;
+    /// Whether the transition is a key-down event.
+    bool pressed;
+
+    bool operator==(const RawKeyboardTransition &) const = default;
 };
 
 /// Selects how a binding changes its logical switch.
@@ -204,6 +217,9 @@ struct InputApplyResult
 
 /// Evaluates logical switch state for the configured visibility rule.
 [[nodiscard]] bool evaluate_input_visibility(InputVisibilityRule rule, bool switch_a, bool switch_b) noexcept;
+
+/// Decodes a complete keyboard Raw Input payload or returns no value for another device type.
+[[nodiscard]] std::optional<RawKeyboardTransition> parse_raw_keyboard_input(std::span<const std::byte> payload);
 
 /// Deterministic logical-switch state machine shared by all input backends.
 class HotkeyStateMachine

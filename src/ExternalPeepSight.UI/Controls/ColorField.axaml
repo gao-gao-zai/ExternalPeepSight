@@ -1,0 +1,40 @@
+<UserControl
+    x:Class="ExternalPeepSight.UI.Controls.ColorField"
+    x:Name="Root"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    x:CompileBindings="False">
+    <Grid ColumnDefinitions="42,8,*">
+        <Button
+            Width="42"
+            Height="32"
+            Padding="5"
+            ToolTip.Tip="{DynamicResource Loc.Common.Color}">
+            <Button.Flyout>
+                <Flyout Placement="BottomEdgeAlignedRight">
+                    <ColorView
+                        Width="300"
+                        Color="{Binding Color, ElementName=Root, Mode=TwoWay}"
+                        IsAlphaEnabled="True"
+                        IsColorPreviewVisible="True"
+                        IsColorSpectrumVisible="True" />
+                </Flyout>
+            </Button.Flyout>
+            <Border
+                Width="26"
+                Height="18"
+                BorderBrush="{DynamicResource AppBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="3">
+                <Border.Background>
+                    <SolidColorBrush Color="{Binding Color, ElementName=Root}" />
+                </Border.Background>
+            </Border>
+        </Button>
+        <TextBox
+            Grid.Column="2"
+            VerticalContentAlignment="Center"
+            PlaceholderText="{DynamicResource Loc.Common.HexColor}"
+            Text="{Binding Hex, ElementName=Root, Mode=TwoWay}" />
+    </Grid>
+</UserControl>

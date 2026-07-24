@@ -1,0 +1,166 @@
+<Application
+    x:Class="ExternalPeepSight.UI.App"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:styling="using:FluentAvalonia.Styling">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="AppShellBrush" Color="#F4F6F8" />
+                    <SolidColorBrush x:Key="AppSidebarBrush" Color="#EBEFF2" />
+                    <SolidColorBrush x:Key="AppSurfaceBrush" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="AppSubtleSurfaceBrush" Color="#F7F9FA" />
+                    <SolidColorBrush x:Key="AppHoverBrush" Color="#E3E8EC" />
+                    <SolidColorBrush x:Key="AppBorderBrush" Color="#D6DCE1" />
+                    <SolidColorBrush x:Key="AppTextBrush" Color="#1B2025" />
+                    <SolidColorBrush x:Key="AppSecondaryTextBrush" Color="#5D6770" />
+                    <SolidColorBrush x:Key="AppAccentBrush" Color="#0B7565" />
+                    <SolidColorBrush x:Key="AppAccentSoftBrush" Color="#D7EEE9" />
+                    <SolidColorBrush x:Key="AppPreviewBrush" Color="#171B20" />
+                    <SolidColorBrush x:Key="AppErrorBrush" Color="#B42318" />
+                    <SolidColorBrush x:Key="AppErrorSoftBrush" Color="#FDE8E6" />
+                    <SolidColorBrush x:Key="AppSuccessBrush" Color="#16845B" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="AppShellBrush" Color="#121518" />
+                    <SolidColorBrush x:Key="AppSidebarBrush" Color="#191D21" />
+                    <SolidColorBrush x:Key="AppSurfaceBrush" Color="#1D2227" />
+                    <SolidColorBrush x:Key="AppSubtleSurfaceBrush" Color="#242A30" />
+                    <SolidColorBrush x:Key="AppHoverBrush" Color="#2A3137" />
+                    <SolidColorBrush x:Key="AppBorderBrush" Color="#353D44" />
+                    <SolidColorBrush x:Key="AppTextBrush" Color="#F0F3F5" />
+                    <SolidColorBrush x:Key="AppSecondaryTextBrush" Color="#A8B0B7" />
+                    <SolidColorBrush x:Key="AppAccentBrush" Color="#59C7B2" />
+                    <SolidColorBrush x:Key="AppAccentSoftBrush" Color="#173C35" />
+                    <SolidColorBrush x:Key="AppPreviewBrush" Color="#0D1013" />
+                    <SolidColorBrush x:Key="AppErrorBrush" Color="#FF8A80" />
+                    <SolidColorBrush x:Key="AppErrorSoftBrush" Color="#442523" />
+                    <SolidColorBrush x:Key="AppSuccessBrush" Color="#55C797" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+    <Application.Styles>
+        <styling:FluentAvaloniaTheme />
+
+        <Style Selector="Window">
+            <Setter Property="Background" Value="{DynamicResource AppShellBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource AppTextBrush}" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
+        </Style>
+        <Style Selector="TextBlock.page-title">
+            <Setter Property="FontSize" Value="22" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.section-title">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.secondary">
+            <Setter Property="Foreground" Value="{DynamicResource AppSecondaryTextBrush}" />
+        </Style>
+        <Style Selector="TextBlock.field-label">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource AppSecondaryTextBrush}" />
+        </Style>
+        <Style Selector="Border.surface">
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+        </Style>
+        <Style Selector="Border.inspector-section">
+            <Setter Property="Padding" Value="0,0,0,18" />
+            <Setter Property="Margin" Value="0,0,0,18" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+        </Style>
+        <Style Selector="Border.inspector-section.last">
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+        <Style Selector="Button.icon">
+            <Setter Property="Width" Value="34" />
+            <Setter Property="Height" Value="34" />
+            <Setter Property="MinWidth" Value="34" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons" />
+            <Setter Property="FontSize" Value="15" />
+        </Style>
+        <Style Selector="Button.primary">
+            <Setter Property="Background" Value="{DynamicResource AppAccentBrush}" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="ListBox.nav-list">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="ListBox.nav-list > ListBoxItem">
+            <Setter Property="Margin" Value="10,2" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Foreground" Value="{DynamicResource AppSecondaryTextBrush}" />
+        </Style>
+        <Style Selector="ListBox.nav-list > ListBoxItem:pointerover">
+            <Setter Property="Background" Value="{DynamicResource AppHoverBrush}" />
+        </Style>
+        <Style Selector="ListBox.nav-list > ListBoxItem:selected">
+            <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}" />
+            <Setter Property="BorderThickness" Value="3,0,0,0" />
+            <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
+        </Style>
+        <Style Selector="ListBox.compact-list">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="ListBox.compact-list > ListBoxItem">
+            <Setter Property="MinHeight" Value="38" />
+            <Setter Property="Margin" Value="0,1" />
+            <Setter Property="Padding" Value="10,7" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="ListBox.compact-list > ListBoxItem:selected">
+            <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
+        </Style>
+        <Style Selector="RadioButton.segment">
+            <Setter Property="MinHeight" Value="34" />
+            <Setter Property="Padding" Value="12,6" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource AppSecondaryTextBrush}" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{DynamicResource AppBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="4"
+                        Padding="{TemplateBinding Padding}">
+                        <ContentPresenter
+                            Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                            HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalContentAlignment="Center" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="RadioButton.segment:pointerover">
+            <Setter Property="Background" Value="{DynamicResource AppHoverBrush}" />
+        </Style>
+        <Style Selector="RadioButton.segment:checked">
+            <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Slider.inspector-slider">
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+    </Application.Styles>
+</Application>

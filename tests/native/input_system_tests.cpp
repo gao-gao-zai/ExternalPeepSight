@@ -5,8 +5,11 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <chrono>
+#include <cstring>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
 namespace
 {
@@ -24,6 +27,39 @@ using external_peepsight::RawInputBinding;
 constexpr InputKeyIdentity kKeyA{0x1EU, false, InputModifiers::none};
 constexpr InputKeyIdentity kKeyB{0x30U, false, InputModifiers::none};
 constexpr InputKeyIdentity kCtrlKeyA{0x1EU, false, InputModifiers::ctrl};
+
+struct InputWindowSearch
+{
+    DWORD process_id;
+    HWND window = nullptr;
+};
+
+BOOL CALLBACK find_input_window(_In_ const HWND window, _In_ const LPARAM parameter) noexcept
+{
+    auto *search = reinterpret_cast<InputWindowSearch *>(parameter);
+    DWORD process_id = 0U;
+    GetWindowThreadProcessId(window, &process_id);
+    if (process_id != search->process_id)
+    {
+        return TRUE;
+    }
+
+    wchar_t class_name[64]{};
+    if (GetClassNameW(window, class_name, static_cast<int>(std::size(class_name))) != 0 &&
+        std::wstring_view(class_name) == L"ExternalPeepSight.Input.Window")
+    {
+        search->window = window;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+[[nodiscard]] HWND find_current_process_input_window()
+{
+    InputWindowSearch search{GetCurrentProcessId()};
+    EnumWindows(find_input_window, reinterpret_cast<LPARAM>(&search));
+    return search.window;
+}
 
 [[nodiscard]] InputConfiguration unbound_configuration()
 {
@@ -241,6 +277,24 @@ TEST(InputConfigurationParser, AcceptsFlagEnumFormattingAndRejectsUnknownContent
                  std::invalid_argument);
 }
 
+TEST(RawKeyboardInput, AcceptsKeyboardPayloadSmallerThanRawInputUnion)
+{
+    RAWINPUT input{};
+    input.header.dwType = RIM_TYPEKEYBOARD;
+    input.data.keyboard.MakeCode = 0x31U;
+    input.data.keyboard.Flags = 0U;
+    constexpr std::size_t keyboard_payload_size = offsetof(RAWINPUT, data) + sizeof(RAWKEYBOARD);
+    ASSERT_LT(keyboard_payload_size, sizeof(RAWINPUT));
+
+    const auto *bytes = reinterpret_cast<const std::byte *>(&input);
+    const std::optional<external_peepsight::RawKeyboardTransition> transition =
+        external_peepsight::parse_raw_keyboard_input({bytes, keyboard_payload_size});
+
+    ASSERT_TRUE(transition.has_value());
+    EXPECT_EQ((external_peepsight::InputPhysicalKey{0x31U, false}), transition->key);
+    EXPECT_TRUE(transition->pressed);
+}
+
 TEST(GlobalInputService, StartsAppliesConfigurationAndAllowsRepeatedStop)
 {
     std::atomic<unsigned int> callback_count = 0U;
@@ -263,5 +317,22 @@ TEST(GlobalInputService, StartsAppliesConfigurationAndAllowsRepeatedStop)
     EXPECT_EQ(ERROR_SUCCESS, result.win32_error);
     EXPECT_GE(callback_count.load(std::memory_order_relaxed), 1U);
     EXPECT_TRUE(last_visible.load(std::memory_order_acquire));
+}
+
+TEST(GlobalInputService, InvalidRawInputEventDoesNotStopConfigurationUpdates)
+{
+    external_peepsight::GlobalInputService service([](const external_peepsight::InputStateSnapshot) {});
+    service.start();
+
+    const HWND input_window = find_current_process_input_window();
+    ASSERT_NE(nullptr, input_window);
+    SendMessageW(input_window, WM_INPUT, RIM_INPUT, reinterpret_cast<LPARAM>(INVALID_HANDLE_VALUE));
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    const external_peepsight::InputApplyResult result = service.apply_configuration(unbound_configuration());
+    service.stop();
+
+    EXPECT_TRUE(result.applied);
+    EXPECT_EQ(ERROR_SUCCESS, result.win32_error);
 }
 } // namespace

@@ -67,6 +67,17 @@ struct CrosshairGeometry
     return HTTRANSPARENT;
 }
 
+/// Evaluates whether an overlay should be visible on its monitor.
+///
+/// Toast overlays ignore input switches. Profile overlays remain hidden until
+/// the Host has received a configured switch visibility state.
+[[nodiscard]] constexpr bool evaluate_overlay_visibility(bool monitor_selected, bool is_toast,
+                                                         bool switch_visibility_configured,
+                                                         bool switch_visibility) noexcept
+{
+    return monitor_selected && (is_toast || (switch_visibility_configured && switch_visibility));
+}
+
 /// Calculates the monitor-centered HWND bounds required by the prototype content.
 ///
 /// The returned dimensions preserve the monitor's width and height parity so

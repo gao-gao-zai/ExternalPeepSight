@@ -1,0 +1,141 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="App.Title" xml:space="preserve"><value>ExternalPeepSight</value></data>
+  <data name="App.Profile" xml:space="preserve"><value>当前配置</value></data>
+  <data name="App.HostConnected" xml:space="preserve"><value>Host 已连接</value></data>
+  <data name="App.HostConnecting" xml:space="preserve"><value>正在连接 Host</value></data>
+  <data name="App.HostError" xml:space="preserve"><value>Host 拒绝了最近一次修改，仍在使用上一份有效配置。</value></data>
+  <data name="App.HostRequestError" xml:space="preserve"><value>Host 拒绝了最近一次修改：{0}：{1}。仍在使用上一份有效配置。</value></data>
+  <data name="App.InvalidChange" xml:space="preserve"><value>输入值超出支持范围。</value></data>
+  <data name="App.PersistenceError" xml:space="preserve"><value>配置保存失败。</value></data>
+  <data name="App.Dismiss" xml:space="preserve"><value>关闭提示</value></data>
+  <data name="Navigation.Crosshair" xml:space="preserve"><value>准星编辑</value></data>
+  <data name="Navigation.Image" xml:space="preserve"><value>图像编辑</value></data>
+  <data name="Navigation.Monitors" xml:space="preserve"><value>显示器选择</value></data>
+  <data name="Navigation.Switches" xml:space="preserve"><value>逻辑开关与快捷键</value></data>
+  <data name="Navigation.Profiles" xml:space="preserve"><value>配置集管理</value></data>
+  <data name="Navigation.Transfer" xml:space="preserve"><value>导入与导出</value></data>
+  <data name="Navigation.Settings" xml:space="preserve"><value>应用设置</value></data>
+  <data name="Common.Mode" xml:space="preserve"><value>覆盖模式</value></data>
+  <data name="Common.Crosshair" xml:space="preserve"><value>准星</value></data>
+  <data name="Common.Image" xml:space="preserve"><value>图像</value></data>
+  <data name="Common.Anchor" xml:space="preserve"><value>定位基准</value></data>
+  <data name="Common.ScreenCenter" xml:space="preserve"><value>屏幕中心</value></data>
+  <data name="Common.TopLeft" xml:space="preserve"><value>左上角</value></data>
+  <data name="Common.OffsetX" xml:space="preserve"><value>水平偏移（px）</value></data>
+  <data name="Common.OffsetY" xml:space="preserve"><value>垂直偏移（px）</value></data>
+  <data name="Common.Color" xml:space="preserve"><value>颜色</value></data>
+  <data name="Common.HexColor" xml:space="preserve"><value>十六进制颜色</value></data>
+  <data name="Common.Enabled" xml:space="preserve"><value>启用</value></data>
+  <data name="Common.Name" xml:space="preserve"><value>名称</value></data>
+  <data name="Common.Add" xml:space="preserve"><value>新建</value></data>
+  <data name="Common.Duplicate" xml:space="preserve"><value>复制</value></data>
+  <data name="Common.Delete" xml:space="preserve"><value>删除</value></data>
+  <data name="Common.Clear" xml:space="preserve"><value>清除</value></data>
+  <data name="Common.Browse" xml:space="preserve"><value>浏览</value></data>
+  <data name="Common.Refresh" xml:space="preserve"><value>刷新</value></data>
+  <data name="Common.Apply" xml:space="preserve"><value>应用</value></data>
+  <data name="Common.Position" xml:space="preserve"><value>位置</value></data>
+  <data name="Crosshair.Preview" xml:space="preserve"><value>实时预览</value></data>
+  <data name="Crosshair.CenterPoint" xml:space="preserve"><value>中心点</value></data>
+  <data name="Crosshair.CenterVisible" xml:space="preserve"><value>显示中心点</value></data>
+  <data name="Crosshair.CenterRadius" xml:space="preserve"><value>中心点半径（px）</value></data>
+  <data name="Crosshair.Linked" xml:space="preserve"><value>联动支臂尺寸、间距、可见性和颜色</value></data>
+  <data name="Crosshair.LinkArms" xml:space="preserve"><value>联动支臂</value></data>
+  <data name="Crosshair.Arm" xml:space="preserve"><value>支臂</value></data>
+  <data name="Crosshair.ArmTop" xml:space="preserve"><value>上</value></data>
+  <data name="Crosshair.ArmRight" xml:space="preserve"><value>右</value></data>
+  <data name="Crosshair.ArmBottom" xml:space="preserve"><value>下</value></data>
+  <data name="Crosshair.ArmLeft" xml:space="preserve"><value>左</value></data>
+  <data name="Crosshair.ArmVisible" xml:space="preserve"><value>显示支臂</value></data>
+  <data name="Crosshair.Angle" xml:space="preserve"><value>角度（度）</value></data>
+  <data name="Crosshair.Gap" xml:space="preserve"><value>间距（px）</value></data>
+  <data name="Crosshair.Length" xml:space="preserve"><value>长度（px）</value></data>
+  <data name="Crosshair.Width" xml:space="preserve"><value>宽度（px）</value></data>
+  <data name="Crosshair.Arms" xml:space="preserve"><value>支臂</value></data>
+  <data name="Image.Asset" xml:space="preserve"><value>图像资源</value></data>
+  <data name="Image.NoAsset" xml:space="preserve"><value>尚未选择图像</value></data>
+  <data name="Image.ImportAsset" xml:space="preserve"><value>导入 PNG 或 SVG</value></data>
+  <data name="Image.Scale" xml:space="preserve"><value>缩放比例</value></data>
+  <data name="Image.KeepAspect" xml:space="preserve"><value>保持纵横比</value></data>
+  <data name="Image.PreviewUnavailable" xml:space="preserve"><value>SVG 由 Host 渲染，此处显示资源信息。</value></data>
+  <data name="Image.Invalid" xml:space="preserve"><value>所选文件不是受支持的 PNG 或静态 SVG。</value></data>
+  <data name="Dialog.SelectImage" xml:space="preserve"><value>选择图像</value></data>
+  <data name="Dialog.OpenPackage" xml:space="preserve"><value>导入 EPSX 包</value></data>
+  <data name="Dialog.SavePackage" xml:space="preserve"><value>导出 EPSX 包</value></data>
+  <data name="Monitor.Mode" xml:space="preserve"><value>显示目标</value></data>
+  <data name="Monitor.All" xml:space="preserve"><value>全部显示器</value></data>
+  <data name="Monitor.Explicit" xml:space="preserve"><value>指定显示器</value></data>
+  <data name="Monitor.Focus" xml:space="preserve"><value>焦点显示器</value></data>
+  <data name="Monitor.FocusSource" xml:space="preserve"><value>焦点显示器来源</value></data>
+  <data name="Monitor.ForegroundThenMouse" xml:space="preserve"><value>前台窗口，失败时使用鼠标</value></data>
+  <data name="Monitor.Mouse" xml:space="preserve"><value>鼠标位置</value></data>
+  <data name="Monitor.Primary" xml:space="preserve"><value>主显示器</value></data>
+  <data name="Monitor.Empty" xml:space="preserve"><value>未发现活动显示器。</value></data>
+  <data name="Switch.VisibilityRule" xml:space="preserve"><value>显示规则</value></data>
+  <data name="Switch.RuleA" xml:space="preserve"><value>开关 A</value></data>
+  <data name="Switch.RuleB" xml:space="preserve"><value>开关 B</value></data>
+  <data name="Switch.RuleBoth" xml:space="preserve"><value>两个开关同时开启</value></data>
+  <data name="Switch.RuleEither" xml:space="preserve"><value>任一开关开启</value></data>
+  <data name="Switch.InitialState" xml:space="preserve"><value>初始状态</value></data>
+  <data name="Switch.SwitchA" xml:space="preserve"><value>开关 A</value></data>
+  <data name="Switch.SwitchB" xml:space="preserve"><value>开关 B</value></data>
+  <data name="Hotkey.Mode" xml:space="preserve"><value>触发模式</value></data>
+  <data name="Hotkey.Unbound" xml:space="preserve"><value>未绑定</value></data>
+  <data name="Hotkey.Toggle" xml:space="preserve"><value>切换</value></data>
+  <data name="Hotkey.Independent" xml:space="preserve"><value>分别开启和关闭</value></data>
+  <data name="Hotkey.Hold" xml:space="preserve"><value>按住</value></data>
+  <data name="Hotkey.ToggleKey" xml:space="preserve"><value>切换按键</value></data>
+  <data name="Hotkey.EnableKey" xml:space="preserve"><value>开启按键</value></data>
+  <data name="Hotkey.DisableKey" xml:space="preserve"><value>关闭按键</value></data>
+  <data name="Hotkey.HoldKey" xml:space="preserve"><value>按住按键</value></data>
+  <data name="Hotkey.Capture" xml:space="preserve"><value>单击后按下组合键</value></data>
+  <data name="Hotkey.Conflict" xml:space="preserve"><value>该快捷键与其他有效绑定冲突。</value></data>
+  <data name="Hotkey.Unsupported" xml:space="preserve"><value>不支持该物理按键。</value></data>
+  <data name="Profiles.Sets" xml:space="preserve"><value>配置集</value></data>
+  <data name="Profiles.Profiles" xml:space="preserve"><value>所选配置集中的配置</value></data>
+  <data name="Profiles.Available" xml:space="preserve"><value>全部配置</value></data>
+  <data name="Profiles.ActiveSet" xml:space="preserve"><value>当前配置集</value></data>
+  <data name="Profiles.ActivateSet" xml:space="preserve"><value>将所选配置集设为当前</value></data>
+  <data name="Profiles.Assign" xml:space="preserve"><value>分配到所选配置集</value></data>
+  <data name="Profiles.Remove" xml:space="preserve"><value>从所选配置集移除</value></data>
+  <data name="Profiles.DragHint" xml:space="preserve"><value>可将配置拖到配置集上，也可使用分配按钮。</value></data>
+  <data name="Profiles.NewProfile" xml:space="preserve"><value>新配置</value></data>
+  <data name="Profiles.NewSet" xml:space="preserve"><value>新配置集</value></data>
+  <data name="Transfer.Import" xml:space="preserve"><value>导入配置包</value></data>
+  <data name="Transfer.Export" xml:space="preserve"><value>导出配置包</value></data>
+  <data name="Transfer.Preview" xml:space="preserve"><value>导入预检</value></data>
+  <data name="Transfer.Confirm" xml:space="preserve"><value>确认导入</value></data>
+  <data name="Transfer.Cancel" xml:space="preserve"><value>取消预检</value></data>
+  <data name="Transfer.NoPreview" xml:space="preserve"><value>选择 EPSX 包后，可在应用前检查配置、资源和冲突。</value></data>
+  <data name="Transfer.Summary" xml:space="preserve"><value>{0} 个配置，{1} 个配置集，{2} 个资源，{3} 个标识符冲突</value></data>
+  <data name="Transfer.Imported" xml:space="preserve"><value>配置包已导入。</value></data>
+  <data name="Transfer.Exported" xml:space="preserve"><value>配置包已导出。</value></data>
+  <data name="Transfer.Failed" xml:space="preserve"><value>配置包处理失败。</value></data>
+  <data name="Settings.Appearance" xml:space="preserve"><value>外观</value></data>
+  <data name="Settings.Theme" xml:space="preserve"><value>主题</value></data>
+  <data name="Settings.ThemeSystem" xml:space="preserve"><value>跟随系统</value></data>
+  <data name="Settings.ThemeLight" xml:space="preserve"><value>浅色</value></data>
+  <data name="Settings.ThemeDark" xml:space="preserve"><value>深色</value></data>
+  <data name="Settings.Language" xml:space="preserve"><value>语言</value></data>
+  <data name="Settings.LanguageChinese" xml:space="preserve"><value>简体中文</value></data>
+  <data name="Settings.LanguageEnglish" xml:space="preserve"><value>English</value></data>
+  <data name="Settings.Toasts" xml:space="preserve"><value>状态提示</value></data>
+  <data name="Settings.ToastEnabled" xml:space="preserve"><value>显示 Host 状态提示</value></data>
+  <data name="Settings.ToastPosition" xml:space="preserve"><value>显示位置</value></data>
+  <data name="Settings.ToastDuration" xml:space="preserve"><value>持续时间（ms）</value></data>
+  <data name="Settings.ToastFont" xml:space="preserve"><value>字体</value></data>
+  <data name="Settings.ToastFontSize" xml:space="preserve"><value>字号（px）</value></data>
+  <data name="Settings.ToastForeground" xml:space="preserve"><value>文字颜色</value></data>
+  <data name="Settings.ToastBackground" xml:space="preserve"><value>背景颜色</value></data>
+  <data name="Settings.TopLeft" xml:space="preserve"><value>左上</value></data>
+  <data name="Settings.TopCenter" xml:space="preserve"><value>顶部居中</value></data>
+  <data name="Settings.TopRight" xml:space="preserve"><value>右上</value></data>
+  <data name="Settings.BottomLeft" xml:space="preserve"><value>左下</value></data>
+  <data name="Settings.BottomCenter" xml:space="preserve"><value>底部居中</value></data>
+  <data name="Settings.BottomRight" xml:space="preserve"><value>右下</value></data>
+</root>

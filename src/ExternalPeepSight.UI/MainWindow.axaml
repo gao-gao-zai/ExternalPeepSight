@@ -1,0 +1,156 @@
+<Window
+    x:Class="ExternalPeepSight.UI.MainWindow"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:core="using:ExternalPeepSight.Core"
+    xmlns:views="using:ExternalPeepSight.UI.Views"
+    xmlns:vm="using:ExternalPeepSight.UI.ViewModels"
+    x:DataType="vm:MainWindowViewModel"
+    Title="{DynamicResource Loc.App.Title}"
+    Width="1240"
+    Height="800"
+    MinWidth="1040"
+    MinHeight="680"
+    WindowStartupLocation="CenterScreen">
+    <Window.DataTemplates>
+        <DataTemplate DataType="vm:CrosshairEditorViewModel"><views:CrosshairEditorView /></DataTemplate>
+        <DataTemplate DataType="vm:ImageEditorViewModel"><views:ImageEditorView /></DataTemplate>
+        <DataTemplate DataType="vm:MonitorSelectionViewModel"><views:MonitorSelectionView /></DataTemplate>
+        <DataTemplate DataType="vm:SwitchesViewModel"><views:SwitchesView /></DataTemplate>
+        <DataTemplate DataType="vm:ProfileSetsViewModel"><views:ProfileSetsView /></DataTemplate>
+        <DataTemplate DataType="vm:ImportExportViewModel"><views:ImportExportView /></DataTemplate>
+        <DataTemplate DataType="vm:SettingsViewModel"><views:SettingsView /></DataTemplate>
+    </Window.DataTemplates>
+
+    <Grid ColumnDefinitions="216,*" RowDefinitions="60,Auto,*">
+        <Border
+            Grid.RowSpan="3"
+            Background="{DynamicResource AppSidebarBrush}"
+            BorderBrush="{DynamicResource AppBorderBrush}"
+            BorderThickness="0,0,1,0" />
+        <Grid Margin="16,0" ColumnDefinitions="32,*">
+            <Border
+                Width="28"
+                Height="28"
+                VerticalAlignment="Center"
+                Background="{DynamicResource AppAccentBrush}"
+                CornerRadius="5">
+                <TextBlock
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    FontSize="11"
+                    FontWeight="Bold"
+                    Foreground="White"
+                    Text="EPS" />
+            </Border>
+            <TextBlock
+                Grid.Column="1"
+                Margin="9,0,0,0"
+                VerticalAlignment="Center"
+                FontSize="15"
+                FontWeight="SemiBold"
+                Text="{DynamicResource Loc.App.Title}"
+                TextTrimming="CharacterEllipsis" />
+        </Grid>
+        <Border
+            Grid.Column="1"
+            Background="{DynamicResource AppSurfaceBrush}"
+            BorderBrush="{DynamicResource AppBorderBrush}"
+            BorderThickness="0,0,0,1">
+            <Grid Margin="22,0" ColumnDefinitions="Auto,10,320,*,Auto">
+                <TextBlock
+                    VerticalAlignment="Center"
+                    Classes="field-label"
+                    Text="{DynamicResource Loc.App.Profile}" />
+                <ComboBox
+                    Grid.Column="2"
+                    VerticalAlignment="Center"
+                    ItemsSource="{Binding AvailableProfiles}"
+                    SelectedItem="{Binding SelectedProfile, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="core:Profile">
+                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Border
+                    Grid.Column="4"
+                    Padding="10,5"
+                    VerticalAlignment="Center"
+                    Background="{DynamicResource AppSubtleSurfaceBrush}"
+                    CornerRadius="4">
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <Ellipse
+                            Width="8"
+                            Height="8"
+                            VerticalAlignment="Center"
+                            Fill="{DynamicResource AppSuccessBrush}"
+                            Opacity="{Binding IsHostConnected}" />
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            Classes="secondary"
+                            FontSize="12"
+                            Text="{Binding HostStatus}" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+        <Border
+            Grid.Row="1"
+            Grid.Column="1"
+            Padding="16,10"
+            Background="{DynamicResource AppErrorSoftBrush}"
+            BorderBrush="{DynamicResource AppErrorBrush}"
+            BorderThickness="0,0,0,1"
+            IsVisible="{Binding HasError}">
+            <Grid ColumnDefinitions="Auto,10,*,Auto">
+                <TextBlock
+                    VerticalAlignment="Center"
+                    FontFamily="Segoe Fluent Icons"
+                    Foreground="{DynamicResource AppErrorBrush}"
+                    Text="&#xE783;" />
+                <TextBlock
+                    Grid.Column="2"
+                    VerticalAlignment="Center"
+                    Foreground="{DynamicResource AppErrorBrush}"
+                    Text="{Binding ErrorMessage}"
+                    TextWrapping="Wrap" />
+                <Button
+                    Grid.Column="3"
+                    Classes="icon"
+                    Command="{Binding DismissErrorCommand}"
+                    Content="&#xE711;"
+                    Foreground="{DynamicResource AppErrorBrush}"
+                    ToolTip.Tip="{DynamicResource Loc.App.Dismiss}" />
+            </Grid>
+        </Border>
+        <ListBox
+            Grid.Row="2"
+            Classes="nav-list"
+            ItemsSource="{Binding Navigation}"
+            SelectedItem="{Binding SelectedNavigation, Mode=TwoWay}">
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:NavigationItemViewModel">
+                    <Grid Height="42" Margin="10,0" ColumnDefinitions="26,*">
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            FontFamily="Segoe Fluent Icons"
+                            FontSize="16"
+                            Foreground="{Binding $parent[ListBoxItem].Foreground}"
+                            Text="{Binding IconGlyph}" />
+                        <TextBlock
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            Foreground="{Binding $parent[ListBoxItem].Foreground}"
+                            Text="{Binding Name}"
+                            TextTrimming="CharacterEllipsis" />
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+        <ContentControl
+            Grid.Row="2"
+            Grid.Column="1"
+            Content="{Binding SelectedNavigation.Content}" />
+    </Grid>
+</Window>

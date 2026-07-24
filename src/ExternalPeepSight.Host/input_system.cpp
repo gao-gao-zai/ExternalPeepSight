@@ -15,6 +15,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <cstddef>
+#include <cstring>
 #include <exception>
 #include <format>
 #include <limits>
@@ -423,6 +424,45 @@ bool evaluate_input_visibility(const InputVisibilityRule rule, const bool switch
         return switch_a || switch_b;
     }
     return false;
+}
+
+std::optional<RawKeyboardTransition> parse_raw_keyboard_input(const std::span<const std::byte> payload)
+{
+    if (payload.size() < sizeof(RAWINPUTHEADER))
+    {
+        throw std::invalid_argument("Raw Input payload is shorter than its header.");
+    }
+
+    RAWINPUTHEADER header{};
+    std::memcpy(&header, payload.data(), sizeof(header));
+    if (header.dwType != RIM_TYPEKEYBOARD)
+    {
+        return std::nullopt;
+    }
+
+    constexpr std::size_t keyboard_offset = offsetof(RAWINPUT, data);
+    constexpr std::size_t keyboard_payload_size = keyboard_offset + sizeof(RAWKEYBOARD);
+    if (payload.size() < keyboard_payload_size)
+    {
+        throw std::invalid_argument("Raw Input keyboard payload is incomplete.");
+    }
+
+    RAWKEYBOARD keyboard{};
+    std::memcpy(&keyboard, payload.data() + keyboard_offset, sizeof(keyboard));
+    std::uint16_t scan_code = keyboard.MakeCode;
+    bool extended = (keyboard.Flags & (RI_KEY_E0 | RI_KEY_E1)) != 0U;
+    if (scan_code == 0U)
+    {
+        const UINT mapped = MapVirtualKeyW(keyboard.VKey, MAPVK_VK_TO_VSC_EX);
+        scan_code = static_cast<std::uint16_t>(mapped & 0xFFU);
+        extended = extended || (mapped & 0xFF00U) != 0U;
+    }
+    if (scan_code == 0U)
+    {
+        return std::nullopt;
+    }
+
+    return RawKeyboardTransition{{scan_code, extended}, (keyboard.Flags & RI_KEY_BREAK) == 0U};
 }
 
 InputStateSnapshot HotkeyStateMachine::configure(const InputConfiguration &configuration,
@@ -838,7 +878,20 @@ class GlobalInputService::Impl
             return 0;
         }
         case WM_INPUT:
-            handle_raw_input(reinterpret_cast<HRAWINPUT>(long_parameter));
+            try
+            {
+                handle_raw_input(reinterpret_cast<HRAWINPUT>(long_parameter));
+            }
+            catch (const NativeError &error)
+            {
+                log_diagnostic(DiagnosticLevel::warning, "input.raw_input_event_failed", error.what(), error.status());
+                reset_pressed_keys();
+            }
+            catch (const std::exception &error)
+            {
+                log_diagnostic(DiagnosticLevel::warning, "input.raw_input_event_failed", error.what());
+                reset_pressed_keys();
+            }
             return DefWindowProcW(window, message, word_parameter, long_parameter);
         case WM_INPUT_DEVICE_CHANGE:
             if (word_parameter == GIDC_REMOVAL)
@@ -948,9 +1001,9 @@ class GlobalInputService::Impl
         {
             throw_last_error("GetRawInputData size");
         }
-        if (size < sizeof(RAWINPUT))
+        if (size < sizeof(RAWINPUTHEADER))
         {
-            throw NativeError(ERROR_INVALID_DATA, "GetRawInputData keyboard size");
+            throw NativeError(ERROR_INVALID_DATA, "GetRawInputData header size");
         }
         std::vector<std::byte> buffer(size);
         const UINT received = GetRawInputData(raw_input, RID_INPUT, buffer.data(), &size, sizeof(RAWINPUTHEADER));
@@ -963,27 +1016,13 @@ class GlobalInputService::Impl
             throw NativeError(ERROR_INVALID_DATA, "GetRawInputData keyboard length");
         }
 
-        const auto *input = reinterpret_cast<const RAWINPUT *>(buffer.data());
-        if (input->header.dwType != RIM_TYPEKEYBOARD)
+        const std::optional<RawKeyboardTransition> transition = parse_raw_keyboard_input(buffer);
+        if (!transition)
         {
             return;
         }
 
-        const RAWKEYBOARD &keyboard = input->data.keyboard;
-        std::uint16_t scan_code = keyboard.MakeCode;
-        bool extended = (keyboard.Flags & (RI_KEY_E0 | RI_KEY_E1)) != 0U;
-        if (scan_code == 0U)
-        {
-            const UINT mapped = MapVirtualKeyW(keyboard.VKey, MAPVK_VK_TO_VSC_EX);
-            scan_code = static_cast<std::uint16_t>(mapped & 0xFFU);
-            extended = extended || (mapped & 0xFF00U) != 0U;
-        }
-        if (scan_code == 0U)
-        {
-            return;
-        }
-
-        handle_keyboard_transition({scan_code, extended}, (keyboard.Flags & RI_KEY_BREAK) == 0U);
+        handle_keyboard_transition(transition->key, transition->pressed);
     }
 
     void handle_keyboard_transition(const InputPhysicalKey physical, const bool pressed)

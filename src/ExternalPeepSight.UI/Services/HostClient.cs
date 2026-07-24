@@ -1,7 +1,6 @@
 ﻿using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.ComponentModel;
-using System.IO;
 using System.IO.Pipes;
 using System.Text.Json;
 
@@ -10,7 +9,26 @@ namespace ExternalPeepSight.UI.Services;
 /// <summary>
 /// Maintains the authenticated settings connection to the native Host.
 /// </summary>
-public sealed class HostClient : IAsyncDisposable
+internal interface IHostSession
+{
+    public event EventHandler<JsonElement>? StateChanged;
+
+    public event EventHandler<bool>? ConnectionChanged;
+
+    public bool IsConnected { get; }
+
+    public void Start();
+
+    public Task QueueSnapshotAsync(
+        ulong configurationVersion,
+        JsonElement snapshot,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Maintains the authenticated settings connection to the native Host.
+/// </summary>
+public sealed class HostClient : IAsyncDisposable, IHostSession
 {
     private const int ProtocolVersion = 1;
     private const int MaximumMessageBytes = 1024 * 1024;
@@ -25,6 +43,7 @@ public sealed class HostClient : IAsyncDisposable
     private NamedPipeClientStream? stream;
     private Task? connectionLoop;
     private SynchronizationContext? eventContext;
+    private bool isConnected;
 
     /// <summary>
     /// Creates a client for one Host instance namespace.
@@ -43,9 +62,19 @@ public sealed class HostClient : IAsyncDisposable
     public event EventHandler<JsonElement>? StateChanged;
 
     /// <summary>
+    /// Raised when the authenticated Host connection state changes.
+    /// </summary>
+    public event EventHandler<bool>? ConnectionChanged;
+
+    /// <summary>
     /// Raised when the connected Host completes a user-requested graceful exit.
     /// </summary>
     public event EventHandler? HostExited;
+
+    /// <summary>
+    /// Gets whether an authenticated Host connection is active.
+    /// </summary>
+    public bool IsConnected => isConnected;
 
     /// <summary>
     /// Starts the background connection and reconnection loop.
@@ -201,6 +230,7 @@ public sealed class HostClient : IAsyncDisposable
                     cancellationToken);
                 await SendRequestAsync("Hello", new { token = endpoint.Token }, cancellationToken)
                     .ConfigureAwait(false);
+                SetConnected(true);
                 JsonElement state = await SendRequestAsync("GetState", payload: null, cancellationToken)
                     .ConfigureAwait(false);
                 RaiseStateChanged(state);
@@ -218,6 +248,7 @@ public sealed class HostClient : IAsyncDisposable
             }
             finally
             {
+                SetConnected(false);
                 lock (streamLock)
                 {
                     if (ReferenceEquals(stream, connectedStream))
@@ -402,7 +433,7 @@ public sealed class HostClient : IAsyncDisposable
 
                     string code = codeElement.GetString() ?? "Unknown";
                     string messageText = messageElement.GetString() ?? "Host rejected the request.";
-                    completion.TrySetException(new HostProtocolException($"{code}: {messageText}"));
+                    completion.TrySetException(new HostRequestException(code, messageText));
                 }
             }
         }
@@ -475,6 +506,36 @@ public sealed class HostClient : IAsyncDisposable
             (this, handler));
     }
 
+    private void SetConnected(bool connected)
+    {
+        if (isConnected == connected)
+        {
+            return;
+        }
+
+        isConnected = connected;
+        EventHandler<bool>? handler = ConnectionChanged;
+        if (handler is null)
+        {
+            return;
+        }
+
+        SynchronizationContext? context = eventContext;
+        if (context is null || ReferenceEquals(context, SynchronizationContext.Current))
+        {
+            handler(this, connected);
+            return;
+        }
+
+        context.Post(
+            static value =>
+            {
+                var invocation = ((HostClient Client, EventHandler<bool> Handler, bool Connected))value!;
+                invocation.Handler(invocation.Client, invocation.Connected);
+            },
+            (this, handler, connected));
+    }
+
     private void FailPending(Exception exception)
     {
         foreach ((Guid requestId, TaskCompletionSource<JsonElement> completion) in pending)
@@ -500,4 +561,11 @@ public sealed class HostClient : IAsyncDisposable
         exception is IOException or TimeoutException or JsonException or HostProtocolException or Win32Exception;
 
     private sealed class HostProtocolException(string message) : Exception(message);
+}
+
+internal sealed class HostRequestException(string code, string message) : Exception($"{code}: {message}")
+{
+    public string Code { get; } = code;
+
+    public string HostMessage { get; } = message;
 }

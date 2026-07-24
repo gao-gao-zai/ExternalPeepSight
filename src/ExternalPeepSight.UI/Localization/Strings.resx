@@ -1,0 +1,141 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="App.Title" xml:space="preserve"><value>ExternalPeepSight</value></data>
+  <data name="App.Profile" xml:space="preserve"><value>Active profile</value></data>
+  <data name="App.HostConnected" xml:space="preserve"><value>Host connected</value></data>
+  <data name="App.HostConnecting" xml:space="preserve"><value>Connecting to Host</value></data>
+  <data name="App.HostError" xml:space="preserve"><value>Host rejected the latest change. The last valid configuration is still active.</value></data>
+  <data name="App.HostRequestError" xml:space="preserve"><value>Host rejected the latest change: {0}: {1} The last valid configuration is still active.</value></data>
+  <data name="App.InvalidChange" xml:space="preserve"><value>The value is outside the supported range.</value></data>
+  <data name="App.PersistenceError" xml:space="preserve"><value>The configuration could not be saved.</value></data>
+  <data name="App.Dismiss" xml:space="preserve"><value>Dismiss</value></data>
+  <data name="Navigation.Crosshair" xml:space="preserve"><value>Crosshair</value></data>
+  <data name="Navigation.Image" xml:space="preserve"><value>Image</value></data>
+  <data name="Navigation.Monitors" xml:space="preserve"><value>Monitors</value></data>
+  <data name="Navigation.Switches" xml:space="preserve"><value>Switches &amp; hotkeys</value></data>
+  <data name="Navigation.Profiles" xml:space="preserve"><value>Profile sets</value></data>
+  <data name="Navigation.Transfer" xml:space="preserve"><value>Import &amp; export</value></data>
+  <data name="Navigation.Settings" xml:space="preserve"><value>Settings</value></data>
+  <data name="Common.Mode" xml:space="preserve"><value>Overlay mode</value></data>
+  <data name="Common.Crosshair" xml:space="preserve"><value>Crosshair</value></data>
+  <data name="Common.Image" xml:space="preserve"><value>Image</value></data>
+  <data name="Common.Anchor" xml:space="preserve"><value>Anchor</value></data>
+  <data name="Common.ScreenCenter" xml:space="preserve"><value>Screen center</value></data>
+  <data name="Common.TopLeft" xml:space="preserve"><value>Top left</value></data>
+  <data name="Common.OffsetX" xml:space="preserve"><value>Horizontal offset (px)</value></data>
+  <data name="Common.OffsetY" xml:space="preserve"><value>Vertical offset (px)</value></data>
+  <data name="Common.Color" xml:space="preserve"><value>Color</value></data>
+  <data name="Common.HexColor" xml:space="preserve"><value>Hex color</value></data>
+  <data name="Common.Enabled" xml:space="preserve"><value>Enabled</value></data>
+  <data name="Common.Name" xml:space="preserve"><value>Name</value></data>
+  <data name="Common.Add" xml:space="preserve"><value>Add</value></data>
+  <data name="Common.Duplicate" xml:space="preserve"><value>Duplicate</value></data>
+  <data name="Common.Delete" xml:space="preserve"><value>Delete</value></data>
+  <data name="Common.Clear" xml:space="preserve"><value>Clear</value></data>
+  <data name="Common.Browse" xml:space="preserve"><value>Browse</value></data>
+  <data name="Common.Refresh" xml:space="preserve"><value>Refresh</value></data>
+  <data name="Common.Apply" xml:space="preserve"><value>Apply</value></data>
+  <data name="Common.Position" xml:space="preserve"><value>Position</value></data>
+  <data name="Crosshair.Preview" xml:space="preserve"><value>Live preview</value></data>
+  <data name="Crosshair.CenterPoint" xml:space="preserve"><value>Center point</value></data>
+  <data name="Crosshair.CenterVisible" xml:space="preserve"><value>Show center point</value></data>
+  <data name="Crosshair.CenterRadius" xml:space="preserve"><value>Center radius (px)</value></data>
+  <data name="Crosshair.Linked" xml:space="preserve"><value>Link arm size, gap, visibility, and color</value></data>
+  <data name="Crosshair.LinkArms" xml:space="preserve"><value>Link arms</value></data>
+  <data name="Crosshair.Arm" xml:space="preserve"><value>Arm</value></data>
+  <data name="Crosshair.ArmTop" xml:space="preserve"><value>Top</value></data>
+  <data name="Crosshair.ArmRight" xml:space="preserve"><value>Right</value></data>
+  <data name="Crosshair.ArmBottom" xml:space="preserve"><value>Bottom</value></data>
+  <data name="Crosshair.ArmLeft" xml:space="preserve"><value>Left</value></data>
+  <data name="Crosshair.ArmVisible" xml:space="preserve"><value>Show arm</value></data>
+  <data name="Crosshair.Angle" xml:space="preserve"><value>Angle (degrees)</value></data>
+  <data name="Crosshair.Gap" xml:space="preserve"><value>Gap (px)</value></data>
+  <data name="Crosshair.Length" xml:space="preserve"><value>Length (px)</value></data>
+  <data name="Crosshair.Width" xml:space="preserve"><value>Width (px)</value></data>
+  <data name="Crosshair.Arms" xml:space="preserve"><value>Arms</value></data>
+  <data name="Image.Asset" xml:space="preserve"><value>Image asset</value></data>
+  <data name="Image.NoAsset" xml:space="preserve"><value>No image selected</value></data>
+  <data name="Image.ImportAsset" xml:space="preserve"><value>Import PNG or SVG</value></data>
+  <data name="Image.Scale" xml:space="preserve"><value>Scale</value></data>
+  <data name="Image.KeepAspect" xml:space="preserve"><value>Keep aspect ratio</value></data>
+  <data name="Image.PreviewUnavailable" xml:space="preserve"><value>SVG preview is rendered by Host. Metadata is shown here.</value></data>
+  <data name="Image.Invalid" xml:space="preserve"><value>The selected image is not a supported PNG or static SVG.</value></data>
+  <data name="Dialog.SelectImage" xml:space="preserve"><value>Select an image</value></data>
+  <data name="Dialog.OpenPackage" xml:space="preserve"><value>Import an EPSX package</value></data>
+  <data name="Dialog.SavePackage" xml:space="preserve"><value>Export an EPSX package</value></data>
+  <data name="Monitor.Mode" xml:space="preserve"><value>Display targeting</value></data>
+  <data name="Monitor.All" xml:space="preserve"><value>All monitors</value></data>
+  <data name="Monitor.Explicit" xml:space="preserve"><value>Selected monitors</value></data>
+  <data name="Monitor.Focus" xml:space="preserve"><value>Focused monitor</value></data>
+  <data name="Monitor.FocusSource" xml:space="preserve"><value>Focus monitor source</value></data>
+  <data name="Monitor.ForegroundThenMouse" xml:space="preserve"><value>Foreground window, then mouse</value></data>
+  <data name="Monitor.Mouse" xml:space="preserve"><value>Mouse position</value></data>
+  <data name="Monitor.Primary" xml:space="preserve"><value>Primary</value></data>
+  <data name="Monitor.Empty" xml:space="preserve"><value>No active monitors were found.</value></data>
+  <data name="Switch.VisibilityRule" xml:space="preserve"><value>Visibility rule</value></data>
+  <data name="Switch.RuleA" xml:space="preserve"><value>Switch A</value></data>
+  <data name="Switch.RuleB" xml:space="preserve"><value>Switch B</value></data>
+  <data name="Switch.RuleBoth" xml:space="preserve"><value>Both switches</value></data>
+  <data name="Switch.RuleEither" xml:space="preserve"><value>Either switch</value></data>
+  <data name="Switch.InitialState" xml:space="preserve"><value>Initial state</value></data>
+  <data name="Switch.SwitchA" xml:space="preserve"><value>Switch A</value></data>
+  <data name="Switch.SwitchB" xml:space="preserve"><value>Switch B</value></data>
+  <data name="Hotkey.Mode" xml:space="preserve"><value>Activation mode</value></data>
+  <data name="Hotkey.Unbound" xml:space="preserve"><value>Unbound</value></data>
+  <data name="Hotkey.Toggle" xml:space="preserve"><value>Toggle</value></data>
+  <data name="Hotkey.Independent" xml:space="preserve"><value>Separate enable and disable</value></data>
+  <data name="Hotkey.Hold" xml:space="preserve"><value>Hold</value></data>
+  <data name="Hotkey.ToggleKey" xml:space="preserve"><value>Toggle key</value></data>
+  <data name="Hotkey.EnableKey" xml:space="preserve"><value>Enable key</value></data>
+  <data name="Hotkey.DisableKey" xml:space="preserve"><value>Disable key</value></data>
+  <data name="Hotkey.HoldKey" xml:space="preserve"><value>Hold key</value></data>
+  <data name="Hotkey.Capture" xml:space="preserve"><value>Click and press a key combination</value></data>
+  <data name="Hotkey.Conflict" xml:space="preserve"><value>This shortcut conflicts with another active binding.</value></data>
+  <data name="Hotkey.Unsupported" xml:space="preserve"><value>This physical key is not supported.</value></data>
+  <data name="Profiles.Sets" xml:space="preserve"><value>Profile sets</value></data>
+  <data name="Profiles.Profiles" xml:space="preserve"><value>Profiles in selected set</value></data>
+  <data name="Profiles.Available" xml:space="preserve"><value>All profiles</value></data>
+  <data name="Profiles.ActiveSet" xml:space="preserve"><value>Active set</value></data>
+  <data name="Profiles.ActivateSet" xml:space="preserve"><value>Make selected set active</value></data>
+  <data name="Profiles.Assign" xml:space="preserve"><value>Assign to selected set</value></data>
+  <data name="Profiles.Remove" xml:space="preserve"><value>Remove from selected set</value></data>
+  <data name="Profiles.DragHint" xml:space="preserve"><value>Drag a profile onto a set, or use the assign button.</value></data>
+  <data name="Profiles.NewProfile" xml:space="preserve"><value>New profile</value></data>
+  <data name="Profiles.NewSet" xml:space="preserve"><value>New set</value></data>
+  <data name="Transfer.Import" xml:space="preserve"><value>Import package</value></data>
+  <data name="Transfer.Export" xml:space="preserve"><value>Export package</value></data>
+  <data name="Transfer.Preview" xml:space="preserve"><value>Import preview</value></data>
+  <data name="Transfer.Confirm" xml:space="preserve"><value>Confirm import</value></data>
+  <data name="Transfer.Cancel" xml:space="preserve"><value>Cancel preview</value></data>
+  <data name="Transfer.NoPreview" xml:space="preserve"><value>Select an EPSX package to inspect profiles, assets, and conflicts before applying it.</value></data>
+  <data name="Transfer.Summary" xml:space="preserve"><value>{0} profiles, {1} profile sets, {2} assets, {3} identifier conflicts</value></data>
+  <data name="Transfer.Imported" xml:space="preserve"><value>The package was imported.</value></data>
+  <data name="Transfer.Exported" xml:space="preserve"><value>The package was exported.</value></data>
+  <data name="Transfer.Failed" xml:space="preserve"><value>The package could not be processed.</value></data>
+  <data name="Settings.Appearance" xml:space="preserve"><value>Appearance</value></data>
+  <data name="Settings.Theme" xml:space="preserve"><value>Theme</value></data>
+  <data name="Settings.ThemeSystem" xml:space="preserve"><value>Use system setting</value></data>
+  <data name="Settings.ThemeLight" xml:space="preserve"><value>Light</value></data>
+  <data name="Settings.ThemeDark" xml:space="preserve"><value>Dark</value></data>
+  <data name="Settings.Language" xml:space="preserve"><value>Language</value></data>
+  <data name="Settings.LanguageChinese" xml:space="preserve"><value>简体中文</value></data>
+  <data name="Settings.LanguageEnglish" xml:space="preserve"><value>English</value></data>
+  <data name="Settings.Toasts" xml:space="preserve"><value>Status notifications</value></data>
+  <data name="Settings.ToastEnabled" xml:space="preserve"><value>Show Host notifications</value></data>
+  <data name="Settings.ToastPosition" xml:space="preserve"><value>Position</value></data>
+  <data name="Settings.ToastDuration" xml:space="preserve"><value>Duration (ms)</value></data>
+  <data name="Settings.ToastFont" xml:space="preserve"><value>Font family</value></data>
+  <data name="Settings.ToastFontSize" xml:space="preserve"><value>Font size (px)</value></data>
+  <data name="Settings.ToastForeground" xml:space="preserve"><value>Text color</value></data>
+  <data name="Settings.ToastBackground" xml:space="preserve"><value>Background color</value></data>
+  <data name="Settings.TopLeft" xml:space="preserve"><value>Top left</value></data>
+  <data name="Settings.TopCenter" xml:space="preserve"><value>Top center</value></data>
+  <data name="Settings.TopRight" xml:space="preserve"><value>Top right</value></data>
+  <data name="Settings.BottomLeft" xml:space="preserve"><value>Bottom left</value></data>
+  <data name="Settings.BottomCenter" xml:space="preserve"><value>Bottom center</value></data>
+  <data name="Settings.BottomRight" xml:space="preserve"><value>Bottom right</value></data>
+</root>

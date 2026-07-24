@@ -1,0 +1,60 @@
+<UserControl
+    x:Class="ExternalPeepSight.UI.Views.SwitchesView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:ExternalPeepSight.UI.Views"
+    xmlns:vm="using:ExternalPeepSight.UI.ViewModels"
+    x:DataType="vm:SwitchesViewModel">
+    <UserControl.DataTemplates>
+        <DataTemplate DataType="vm:HotkeyEditorViewModel">
+            <views:HotkeyEditorView />
+        </DataTemplate>
+    </UserControl.DataTemplates>
+    <Grid Margin="24" RowDefinitions="Auto,16,*">
+        <TextBlock Classes="page-title" Text="{DynamicResource Loc.Navigation.Switches}" />
+        <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Spacing="16">
+                <Border Classes="surface" Padding="20">
+                    <Grid ColumnDefinitions="*,28,*">
+                        <StackPanel Spacing="10">
+                            <TextBlock Classes="section-title" Text="{DynamicResource Loc.Switch.VisibilityRule}" />
+                            <ComboBox
+                                x:CompileBindings="False"
+                                ItemsSource="{Binding VisibilityRules}"
+                                DisplayMemberBinding="{Binding Name}"
+                                SelectedValue="{Binding VisibilityRule, Mode=TwoWay}"
+                                SelectedValueBinding="{Binding Value}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" Spacing="8">
+                            <TextBlock Classes="section-title" Text="{DynamicResource Loc.Switch.InitialState}" />
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="field-label" Text="{DynamicResource Loc.Switch.SwitchA}" />
+                                <CheckBox
+                                    Grid.Column="1"
+                                    IsChecked="{Binding InitialStateA, Mode=TwoWay}" />
+                            </Grid>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="field-label" Text="{DynamicResource Loc.Switch.SwitchB}" />
+                                <CheckBox
+                                    Grid.Column="1"
+                                    IsChecked="{Binding InitialStateB, Mode=TwoWay}" />
+                            </Grid>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+                <Border Classes="surface" Padding="20">
+                    <StackPanel Spacing="12">
+                        <TextBlock Classes="section-title" Text="{DynamicResource Loc.Switch.SwitchA}" />
+                        <ContentControl Content="{Binding SwitchA}" />
+                    </StackPanel>
+                </Border>
+                <Border Classes="surface" Padding="20">
+                    <StackPanel Spacing="12">
+                        <TextBlock Classes="section-title" Text="{DynamicResource Loc.Switch.SwitchB}" />
+                        <ContentControl Content="{Binding SwitchB}" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

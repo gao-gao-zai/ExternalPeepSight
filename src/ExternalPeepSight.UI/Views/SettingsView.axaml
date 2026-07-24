@@ -1,0 +1,139 @@
+<UserControl
+    x:Class="ExternalPeepSight.UI.Views.SettingsView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:ExternalPeepSight.UI.Controls"
+    xmlns:fa="using:FluentAvalonia.UI.Controls"
+    xmlns:vm="using:ExternalPeepSight.UI.ViewModels"
+    x:DataType="vm:SettingsViewModel">
+    <Grid Margin="24" RowDefinitions="Auto,16,*">
+        <TextBlock Classes="page-title" Text="{DynamicResource Loc.Navigation.Settings}" />
+        <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel MaxWidth="820" HorizontalAlignment="Stretch" Spacing="16">
+                <Border Classes="surface">
+                    <Grid RowDefinitions="48,56,56">
+                        <TextBlock
+                            Margin="18,0"
+                            VerticalAlignment="Center"
+                            Classes="section-title"
+                            Text="{DynamicResource Loc.Settings.Appearance}" />
+                        <Grid
+                            Grid.Row="1"
+                            Margin="18,0"
+                            ColumnDefinitions="*,280">
+                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Settings.Theme}" />
+                            <ComboBox
+                                Grid.Column="1"
+                                VerticalAlignment="Center"
+                                x:CompileBindings="False"
+                                ItemsSource="{Binding Themes}"
+                                DisplayMemberBinding="{Binding Name}"
+                                SelectedValue="{Binding Theme, Mode=TwoWay}"
+                                SelectedValueBinding="{Binding Value}" />
+                        </Grid>
+                        <Grid
+                            Grid.Row="2"
+                            Margin="18,0"
+                            ColumnDefinitions="*,280">
+                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Settings.Language}" />
+                            <ComboBox
+                                Grid.Column="1"
+                                VerticalAlignment="Center"
+                                x:CompileBindings="False"
+                                SelectedValue="{Binding CultureName, Mode=TwoWay}"
+                                SelectedValueBinding="{Binding Tag}">
+                                <ComboBoxItem Content="{DynamicResource Loc.Settings.LanguageChinese}" Tag="zh-CN" />
+                                <ComboBoxItem Content="{DynamicResource Loc.Settings.LanguageEnglish}" Tag="en-US" />
+                            </ComboBox>
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <Border Classes="surface">
+                    <Grid RowDefinitions="48,56,56,56,56,56,56">
+                        <TextBlock
+                            Margin="18,0"
+                            VerticalAlignment="Center"
+                            Classes="section-title"
+                            Text="{DynamicResource Loc.Settings.Toasts}" />
+                        <Grid
+                            Grid.Row="1"
+                            Margin="18,0"
+                            ColumnDefinitions="*,Auto">
+                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Settings.ToastEnabled}" />
+                            <CheckBox
+                                Grid.Column="1"
+                                VerticalAlignment="Center"
+                                IsChecked="{Binding ToastEnabled, Mode=TwoWay}" />
+                        </Grid>
+                        <Grid
+                            Grid.Row="2"
+                            Margin="18,0"
+                            ColumnDefinitions="*,280">
+                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Settings.ToastPosition}" />
+                            <ComboBox
+                                Grid.Column="1"
+                                VerticalAlignment="Center"
+                                x:CompileBindings="False"
+                                ItemsSource="{Binding ToastPositions}"
+                                DisplayMemberBinding="{Binding Name}"
+                                SelectedValue="{Binding ToastPosition, Mode=TwoWay}"
+                                SelectedValueBinding="{Binding Value}" />
+                        </Grid>
+                        <Grid
+                            Grid.Row="3"
+                            Margin="18,0"
+                            ColumnDefinitions="*,130,12,138">
+                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Settings.ToastFont}" />
+                            <TextBox
+                                Grid.Column="1"
+                                VerticalAlignment="Center"
+                                Text="{Binding ToastFontFamily, Mode=TwoWay}" />
+                            <fa:FANumberBox
+                                Grid.Column="3"
+                                VerticalAlignment="Center"
+                                Minimum="6"
+                                Maximum="200"
+                                Value="{Binding ToastFontSize, Mode=TwoWay}" />
+                        </Grid>
+                        <Grid
+                            Grid.Row="4"
+                            Margin="18,0"
+                            ColumnDefinitions="*,280">
+                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Settings.ToastForeground}" />
+                            <controls:ColorField
+                                Grid.Column="1"
+                                VerticalAlignment="Center"
+                                Color="{Binding ToastForeground, Mode=TwoWay}"
+                                Hex="{Binding ToastForegroundHex, Mode=TwoWay}" />
+                        </Grid>
+                        <Grid
+                            Grid.Row="5"
+                            Margin="18,0"
+                            ColumnDefinitions="*,130,12,138">
+                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Settings.ToastBackground}" />
+                            <controls:ColorField
+                                Grid.Column="1"
+                                Grid.ColumnSpan="3"
+                                VerticalAlignment="Center"
+                                Color="{Binding ToastBackground, Mode=TwoWay}"
+                                Hex="{Binding ToastBackgroundHex, Mode=TwoWay}" />
+                        </Grid>
+                        <Grid
+                            Grid.Row="6"
+                            Margin="18,0"
+                            ColumnDefinitions="*,140">
+                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Settings.ToastDuration}" />
+                            <fa:FANumberBox
+                                Grid.Column="1"
+                                VerticalAlignment="Center"
+                                Minimum="100"
+                                Maximum="60000"
+                                Value="{Binding ToastDuration, Mode=TwoWay}" />
+                        </Grid>
+                    </Grid>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

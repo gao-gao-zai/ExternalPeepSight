@@ -1,9 +1,9 @@
-﻿using System.Windows;
+﻿using Avalonia.Controls;
 
 namespace ExternalPeepSight.UI;
 
 /// <summary>
-/// Interaction logic for MainWindow.xaml
+/// Hosts the FluentAvalonia settings experience.
 /// </summary>
 public partial class MainWindow : Window
 {
@@ -12,4 +12,3 @@ public partial class MainWindow : Window
         InitializeComponent();
     }
 }
-
