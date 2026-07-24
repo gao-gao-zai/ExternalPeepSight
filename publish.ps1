@@ -106,10 +106,11 @@ $cmake = Get-CMakePath
 $vsPath = Get-VisualStudioPath
 
 if (-not $SkipChecks) {
-    Invoke-Step "Quality gates" (Join-Path $root "check.ps1") @(
-        "-Coverage",
-        "-Deep"
-    )
+    Write-Host "`n== Quality gates ==" -ForegroundColor Cyan
+    & (Join-Path $root "check.ps1") -Coverage -Deep
+    if (-not $?) {
+        throw "Quality gates failed."
+    }
 }
 
 if (Test-Path -LiteralPath $packageDirectory) {
@@ -170,6 +171,8 @@ Copy-MsvcRuntime -VisualStudioPath $vsPath -Destination $uiPublishDirectory
 
 Copy-Item -LiteralPath (Join-Path $root "README.md") `
     -Destination (Join-Path $packageDirectory "README.md")
+Copy-Item -LiteralPath (Join-Path $root "LICENSE") `
+    -Destination (Join-Path $packageDirectory "LICENSE")
 @"
 ExternalPeepSight $Version
 Runtime: $Runtime
