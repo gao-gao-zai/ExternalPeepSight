@@ -1,4 +1,4 @@
-#include "render_configuration.h"
+﻿#include "render_configuration.h"
 
 #include <bcrypt.h>
 #include <objbase.h>
@@ -561,15 +561,21 @@ struct AssetReferenceValue
     }
 
     std::string selected_id;
+    const std::string active_set_id = winrt::to_string(root.GetNamedString(L"activeProfileSetId"));
     const JsonArray sets = root.GetNamedArray(L"profileSets");
     for (const auto &item : sets)
     {
-        const IJsonValue selected = item.GetObject().GetNamedValue(L"selectedProfileId");
+        const JsonObject profile_set = item.GetObject();
+        if (winrt::to_string(profile_set.GetNamedString(L"id")) != active_set_id)
+        {
+            continue;
+        }
+        const IJsonValue selected = profile_set.GetNamedValue(L"selectedProfileId");
         if (selected.ValueType() == JsonValueType::String)
         {
             selected_id = winrt::to_string(selected.GetString());
-            break;
         }
+        break;
     }
     JsonObject selected_profile = profiles.GetObjectAt(0U);
     if (!selected_id.empty())
@@ -644,7 +650,7 @@ RenderConfiguration parse_render_configuration(const std::string_view snapshot_j
                                                const std::filesystem::path &asset_root)
 {
     const JsonObject root = JsonObject::Parse(winrt::to_hstring(snapshot_json));
-    if (checked_integer(root, L"schemaVersion", 6U, 6U) != 6U)
+    if (checked_integer(root, L"schemaVersion", 8U, 8U) != 8U)
     {
         throw std::invalid_argument("Configuration schema version is not supported.");
     }

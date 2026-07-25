@@ -1,0 +1,249 @@
+﻿<UserControl
+    x:Class="ExternalPeepSight.UI.Views.ScriptManagerView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:ExternalPeepSight.UI.ViewModels"
+    x:DataType="vm:ScriptManagerViewModel">
+    <UserControl.Styles>
+        <Style Selector="Button.target-selector">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="Button.target-selector:pointerover">
+            <Setter Property="Background" Value="{DynamicResource AppHoverBrush}" />
+        </Style>
+        <Style Selector="Button.target-selector.selected">
+            <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}" />
+            <Setter Property="BorderThickness" Value="2" />
+        </Style>
+    </UserControl.Styles>
+    <Grid RowDefinitions="Auto,18,Auto,18,*">
+        <TextBlock
+            Classes="page-title"
+            Margin="28,22,28,0"
+            Text="{DynamicResource Loc.Navigation.Scripts}" />
+
+        <StackPanel
+            Grid.Row="2"
+            IsEnabled="{Binding !IsBusy}"
+            Margin="28,0"
+            Orientation="Horizontal"
+            Spacing="6">
+            <RadioButton
+                Classes="segment"
+                Content="{Binding ScopeOptions[0].Name}"
+                IsChecked="{Binding IsProfileScope, Mode=TwoWay}"
+                MinWidth="112" />
+            <RadioButton
+                Classes="segment"
+                Content="{Binding ScopeOptions[1].Name}"
+                IsChecked="{Binding IsProfileSetScope, Mode=TwoWay}"
+                MinWidth="112" />
+            <RadioButton
+                Classes="segment"
+                Content="{Binding ScopeOptions[2].Name}"
+                IsChecked="{Binding IsGlobalScope, Mode=TwoWay}"
+                MinWidth="112" />
+        </StackPanel>
+
+        <Grid
+            Grid.Row="4"
+            Margin="28,0,28,24"
+            ColumnDefinitions="264,1,*">
+            <Grid
+                IsEnabled="{Binding !IsBusy}"
+                Margin="0,0,18,0"
+                RowDefinitions="Auto,8,Auto,20,Auto,8,*">
+                <TextBlock
+                    Classes="section-title"
+                    Text="{DynamicResource Loc.Script.CurrentTarget}" />
+                <Button
+                    Grid.Row="2"
+                    Classes="target-selector"
+                    Classes.selected="{Binding IsAssignmentSelected}"
+                    Command="{Binding SelectAssignmentCommand}"
+                    HorizontalContentAlignment="Stretch"
+                    IsEnabled="{Binding !IsBusy}">
+                    <Grid ColumnDefinitions="24,*">
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            FontFamily="Segoe Fluent Icons"
+                            Foreground="{DynamicResource AppAccentBrush}"
+                            Text="&#xE8A5;" />
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock
+                                FontWeight="SemiBold"
+                                Text="{Binding CurrentTargetName}"
+                                TextTrimming="CharacterEllipsis" />
+                            <TextBlock
+                                Classes="secondary"
+                                FontSize="11"
+                                IsVisible="{Binding AssignmentHasScript}"
+                                Text="{DynamicResource Loc.Script.AttachedScript}" />
+                            <TextBlock
+                                Classes="secondary"
+                                FontSize="11"
+                                IsVisible="{Binding !AssignmentHasScript}"
+                                Text="{DynamicResource Loc.Script.NoAttachedScript}" />
+                        </StackPanel>
+                    </Grid>
+                </Button>
+
+                <Grid
+                    Grid.Row="4"
+                    ColumnDefinitions="*,Auto">
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        Classes="section-title"
+                        Text="{DynamicResource Loc.Script.Library}" />
+                    <Button
+                        Grid.Column="1"
+                        Classes="icon"
+                        Command="{Binding NewScriptCommand}"
+                        Content="&#xE710;"
+                        IsEnabled="{Binding !IsBusy}"
+                        ToolTip.Tip="{DynamicResource Loc.Script.NewScript}" />
+                </Grid>
+                <Grid Grid.Row="6">
+                    <ListBox
+                        Classes="compact-list"
+                        IsEnabled="{Binding !IsBusy}"
+                        IsVisible="{Binding HasLibraryScripts}"
+                        ItemsSource="{Binding LibraryScripts}"
+                        SelectedItem="{Binding SelectedLibrary, Mode=TwoWay}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ScriptLibraryItemViewModel">
+                                <Grid ColumnDefinitions="22,*">
+                                    <TextBlock
+                                        VerticalAlignment="Center"
+                                        FontFamily="Segoe Fluent Icons"
+                                        Foreground="{DynamicResource AppSecondaryTextBrush}"
+                                        Text="&#xE943;" />
+                                    <TextBlock
+                                        Grid.Column="1"
+                                        VerticalAlignment="Center"
+                                        Text="{Binding Name}"
+                                        TextTrimming="CharacterEllipsis" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <Border
+                        Padding="12"
+                        Background="{DynamicResource AppSubtleSurfaceBrush}"
+                        CornerRadius="4"
+                        IsVisible="{Binding !HasLibraryScripts}"
+                        VerticalAlignment="Top">
+                        <TextBlock
+                            Classes="secondary"
+                            Text="{DynamicResource Loc.Script.LibraryEmpty}"
+                            TextWrapping="Wrap" />
+                    </Border>
+                </Grid>
+            </Grid>
+
+            <Border
+                Grid.Column="1"
+                Background="{DynamicResource AppBorderBrush}" />
+
+            <Grid
+                Grid.Column="2"
+                IsEnabled="{Binding !IsBusy}"
+                Margin="20,0,0,0"
+                RowDefinitions="Auto,12,Auto,10,*,12,Auto">
+                <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Spacing="3">
+                        <TextBlock
+                            Classes="field-label"
+                            Text="{DynamicResource Loc.Common.Name}" />
+                        <TextBox
+                            MinWidth="320"
+                            IsEnabled="{Binding IsLibrarySelected}"
+                            Text="{Binding Name, Mode=TwoWay}" />
+                    </StackPanel>
+                    <StackPanel
+                        Grid.Column="1"
+                        VerticalAlignment="Bottom"
+                        Orientation="Horizontal"
+                        Spacing="8"
+                        IsVisible="{Binding IsLibrarySelected}">
+                        <Button
+                            Classes="icon"
+                            Command="{Binding SaveScriptCommand}"
+                            Content="&#xE74E;"
+                            IsEnabled="{Binding !IsBusy}"
+                            ToolTip.Tip="{DynamicResource Loc.Script.SaveLibraryScript}" />
+                        <Button
+                            Classes="icon"
+                            Command="{Binding DeleteScriptCommand}"
+                            Content="&#xE74D;"
+                            IsEnabled="{Binding !IsBusy}"
+                            ToolTip.Tip="{DynamicResource Loc.Common.Delete}" />
+                    </StackPanel>
+                </Grid>
+
+                <TextBlock
+                    Grid.Row="2"
+                    Classes="section-title"
+                    Text="{DynamicResource Loc.Script.Source}" />
+                <TextBox
+                    Grid.Row="4"
+                    AcceptsReturn="True"
+                    FontFamily="Cascadia Mono"
+                    FontSize="12"
+                    HorizontalContentAlignment="Stretch"
+                    IsEnabled="{Binding !IsBusy}"
+                    ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                    ScrollViewer.VerticalScrollBarVisibility="Auto"
+                    Text="{Binding Source, Mode=TwoWay}"
+                    TextWrapping="NoWrap" />
+
+                <Grid
+                    Grid.Row="6"
+                    ColumnDefinitions="*,Auto">
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        Foreground="{DynamicResource AppSecondaryTextBrush}"
+                        IsVisible="{Binding !HasError}"
+                        Text="{Binding StatusText}"
+                        TextWrapping="Wrap" />
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        Foreground="{DynamicResource AppErrorBrush}"
+                        IsVisible="{Binding HasError}"
+                        Text="{Binding StatusText}"
+                        TextWrapping="Wrap" />
+                    <StackPanel
+                        Grid.Column="1"
+                        Orientation="Horizontal"
+                        Spacing="8">
+                        <Button
+                            Command="{Binding SaveAssignmentToLibraryCommand}"
+                            Content="{DynamicResource Loc.Script.SaveToLibrary}"
+                            IsEnabled="{Binding !IsBusy}"
+                            IsVisible="{Binding IsAssignmentSelected}" />
+                        <Button
+                            Command="{Binding DisableAssignmentCommand}"
+                            Content="{DynamicResource Loc.Script.Disable}"
+                            IsEnabled="{Binding !IsBusy}"
+                            IsVisible="{Binding AssignmentEnabled}" />
+                        <Button
+                            Classes="primary"
+                            Command="{Binding ValidateAndApplyCommand}"
+                            Content="{DynamicResource Loc.Script.ValidateAndApply}"
+                            IsEnabled="{Binding !IsBusy}"
+                            IsVisible="{Binding IsAssignmentSelected}" />
+                        <Button
+                            Classes="primary"
+                            Command="{Binding CopyToTargetCommand}"
+                            Content="{DynamicResource Loc.Script.CopyToTarget}"
+                            IsEnabled="{Binding !IsBusy}"
+                            IsVisible="{Binding IsLibrarySelected}" />
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>

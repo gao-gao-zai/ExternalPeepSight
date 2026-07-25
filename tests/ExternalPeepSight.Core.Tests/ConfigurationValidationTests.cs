@@ -291,6 +291,370 @@ public sealed class ConfigurationValidationTests
             issue.Message.Contains("$.profiles[0].switches.switchA.toggleKey", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void LuaControlModeRequiresAnEnabledProfileScript()
+    {
+        ConfigurationDocument seed = ConfigurationDefaults.Create();
+        Profile profile = seed.Profiles[0] with
+        {
+            ControlMode = DisplayControlMode.Lua,
+            Script = new ScriptConfiguration(
+                false,
+                "1",
+                "return eps.script {}",
+                new string('A', 64),
+                [],
+                []),
+        };
+
+        ConfigurationValidationResult result =
+            ConfigurationValidator.Validate(seed with { Profiles = [profile] });
+
+        Assert.Contains(result.Issues, issue =>
+            issue.Path == "$.profiles[0].script" &&
+            issue.Message.Contains("enabled", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidLuaDeclarationsAcceptAllSupportedSettingTypes()
+    {
+        ConfigurationDocument seed = ConfigurationDefaults.Create();
+        KeyIdentity key = new(InputDeviceKind.Keyboard, 30, false, KeyModifiers.Ctrl);
+        ScriptConfiguration script = new(
+            true,
+            "1",
+            "return eps.script {}",
+            new string('A', 64),
+            [
+                new("pressed", "Pressed", true, false, true, key),
+                new("released", "Released", false, true, false, null),
+            ],
+            [
+                new("enabled", "Enabled", ScriptSettingType.Boolean, "true", [], null, null),
+                new("count", "Count", ScriptSettingType.Integer, "3", [], 0, 10),
+                new("scale", "Scale", ScriptSettingType.Double, "0.5", [], 0, 1),
+                new("label", "Label", ScriptSettingType.String, "value", [], null, null),
+                new("mode", "Mode", ScriptSettingType.Enum, "one", ["one", "two"], null, null),
+            ]);
+        Profile profile = seed.Profiles[0] with
+        {
+            ControlMode = DisplayControlMode.Lua,
+            Script = script,
+        };
+
+        ConfigurationValidationResult result = ConfigurationValidator.Validate(seed with { Profiles = [profile] });
+
+        Assert.True(result.IsValid, string.Join(Environment.NewLine, result.Issues));
+    }
+
+    [Fact]
+    public void ValidScriptUiAcceptsTrustedControlsSectionsAndConditions()
+    {
+        ConfigurationDocument seed = ConfigurationDefaults.Create();
+        ScriptConfiguration script = new(
+            true,
+            "2",
+            "return eps.script { api_version = \"2\" }",
+            new string('A', 64),
+            [],
+            [
+                new("enabled", "Enabled", ScriptSettingType.Boolean, "true", [], null, null),
+                new("opacity", "Opacity", ScriptSettingType.Double, "0.5", [], 0, 1),
+                new("mode", "Mode", ScriptSettingType.Enum, "one", ["one", "two"], null, null),
+            ],
+            new ScriptUiLayout(
+            [
+                new ScriptUiSection(
+                    "general",
+                    "General",
+                    string.Empty,
+                    true,
+                    true,
+                    2,
+                    [
+                        new ScriptUiItem(
+                            "enabled",
+                            ScriptUiControlType.Switch,
+                            string.Empty,
+                            string.Empty,
+                            null,
+                            null),
+                        new ScriptUiItem(
+                            "opacity",
+                            ScriptUiControlType.Slider,
+                            "Opacity",
+                            "%",
+                            0.05,
+                            new ScriptUiVisibilityCondition("enabled", "true")),
+                        new ScriptUiItem(
+                            "mode",
+                            ScriptUiControlType.Segmented,
+                            string.Empty,
+                            string.Empty,
+                            null,
+                            null),
+                    ]),
+            ]));
+
+        ConfigurationValidationResult result = ConfigurationValidator.Validate(
+            seed with { GlobalScript = script });
+
+        Assert.True(result.IsValid, string.Join(Environment.NewLine, result.Issues));
+    }
+
+    [Fact]
+    public void InvalidScriptUiRejectsUnsafeOrInconsistentLayout()
+    {
+        ConfigurationDocument seed = ConfigurationDefaults.Create();
+        ScriptConfiguration script = new(
+            true,
+            "1",
+            "return eps.script {}",
+            new string('A', 64),
+            [],
+            [
+                new("enabled", "Enabled", ScriptSettingType.Boolean, "true", [], null, null),
+                new("opacity", "Opacity", ScriptSettingType.Double, "0.5", [], 0, 1),
+            ],
+            new ScriptUiLayout(
+            [
+                new ScriptUiSection(
+                    "general",
+                    "General",
+                    string.Empty,
+                    false,
+                    true,
+                    3,
+                    [
+                        new ScriptUiItem(
+                            "enabled",
+                            ScriptUiControlType.Slider,
+                            string.Empty,
+                            string.Empty,
+                            -1,
+                            new ScriptUiVisibilityCondition("enabled", "true")),
+                    ]),
+            ]));
+
+        ConfigurationValidationResult result = ConfigurationValidator.Validate(
+            seed with { GlobalScript = script });
+
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.ui");
+        Assert.Contains(result.Issues, issue => issue.Path.EndsWith(".columns", StringComparison.Ordinal));
+        Assert.Contains(result.Issues, issue => issue.Path.EndsWith(".control", StringComparison.Ordinal));
+        Assert.Contains(result.Issues, issue => issue.Path.EndsWith(".step", StringComparison.Ordinal));
+        Assert.Contains(result.Issues, issue =>
+            issue.Path.EndsWith(".visibleWhen.settingId", StringComparison.Ordinal));
+        Assert.Contains(result.Issues, issue =>
+            issue.Path == "$.globalScript.ui.sections" &&
+            issue.Message.Contains("every declared setting", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void InvalidLuaBindingDeclarationsAreRejected()
+    {
+        ConfigurationDocument seed = ConfigurationDefaults.Create();
+        ScriptConfiguration script = new(
+            true,
+            "3",
+            " ",
+            "invalid",
+            [
+                null!,
+                new(
+                    string.Empty,
+                    string.Empty,
+                    false,
+                    false,
+                    true,
+                    new KeyIdentity((InputDeviceKind)99, 0, false, (KeyModifiers)32)),
+                new(
+                    "duplicate",
+                    new string('D', 101),
+                    true,
+                    false,
+                    true,
+                    new KeyIdentity(InputDeviceKind.Keyboard, 30, false, KeyModifiers.None)),
+                new(
+                    "duplicate",
+                    "Second",
+                    true,
+                    false,
+                    true,
+                    new KeyIdentity(InputDeviceKind.Keyboard, 30, false, KeyModifiers.None)),
+            ],
+            []);
+
+        ConfigurationValidationResult result = ConfigurationValidator.Validate(
+            seed with
+            {
+                GlobalScript = script,
+            });
+
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.apiVersion");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.source");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.sourceHash");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.bindings[0]");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.bindings[1].id");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.bindings[1].key.device");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.bindings[2].displayName");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.bindings[3].id");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.bindings[3].key");
+    }
+
+    [Fact]
+    public void InvalidLuaSettingDeclarationsAreRejected()
+    {
+        ConfigurationDocument seed = ConfigurationDefaults.Create();
+        ScriptConfiguration script = new(
+            true,
+            "1",
+            "return eps.script {}",
+            new string('A', 64),
+            [],
+            [
+                null!,
+                new("1invalid", new string('D', 101), (ScriptSettingType)99, "value", [], null, null),
+                new("boolean", "Boolean", ScriptSettingType.Boolean, "yes", [], null, null),
+                new("integer", "Integer", ScriptSettingType.Integer, "1.5", [], null, null),
+                new("range", "Range", ScriptSettingType.Integer, "10", [], 20, 10),
+                new("double", "Double", ScriptSettingType.Double, "NaN", [], null, null),
+                new("doubleRange", "Double range", ScriptSettingType.Double, "2", [], 0, 1),
+                new("string", "String", ScriptSettingType.String, "value", ["option"], null, null),
+                new("emptyEnum", "Empty enum", ScriptSettingType.Enum, "value", [], null, null),
+                new("duplicateEnum", "Duplicate enum", ScriptSettingType.Enum, "one", ["one", "one"], null, null),
+                new("missingEnum", "Missing enum", ScriptSettingType.Enum, "three", ["one", "two"], null, null),
+                new("nullValue", "Null value", ScriptSettingType.String, null!, [], null, null),
+                new("longValue", "Long value", ScriptSettingType.String, new string('V', 4097), [], null, null),
+            ]);
+
+        ConfigurationValidationResult result = ConfigurationValidator.Validate(
+            seed with
+            {
+                GlobalScript = script,
+            });
+
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[0]");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[1].type");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[2].value");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[3].value");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[4]");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[5].value");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[6].value");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[7].options");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[8].options");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[9].options");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[10].value");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[11].value");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[12].value");
+    }
+
+    [Fact]
+    public void LuaDeclarationCollectionsEnforceLimits()
+    {
+        ConfigurationDocument seed = ConfigurationDefaults.Create();
+        ScriptBindingSlot binding = new("binding", "Binding", true, false, true, null);
+        ScriptSetting setting = new("setting", "Setting", ScriptSettingType.String, "value", [], null, null);
+        ScriptConfiguration tooMany = new(
+            true,
+            "1",
+            "return eps.script {}",
+            new string('A', 64),
+            Enumerable.Repeat(binding, 65).ToArray(),
+            Enumerable.Repeat(setting, 65).ToArray());
+        ScriptConfiguration nullCollections = tooMany with
+        {
+            Bindings = null!,
+            Settings = null!,
+        };
+
+        ConfigurationValidationResult tooManyResult = ConfigurationValidator.Validate(
+            seed with
+            {
+                GlobalScript = tooMany,
+            });
+        ConfigurationValidationResult nullResult = ConfigurationValidator.Validate(
+            seed with
+            {
+                GlobalScript = nullCollections,
+            });
+
+        Assert.Contains(tooManyResult.Issues, issue => issue.Path == "$.globalScript.bindings");
+        Assert.Contains(tooManyResult.Issues, issue => issue.Path == "$.globalScript.settings");
+        Assert.Contains(nullResult.Issues, issue => issue.Path == "$.globalScript.bindings");
+        Assert.Contains(nullResult.Issues, issue => issue.Path == "$.globalScript.settings");
+    }
+
+    [Fact]
+    public void ActiveScopeBindingsCannotReuseBasicOrOtherScriptKeys()
+    {
+        ConfigurationDocument seed = ConfigurationDefaults.Create();
+        KeyIdentity first = new(InputDeviceKind.Keyboard, 30, false, KeyModifiers.Ctrl);
+        KeyIdentity second = new(InputDeviceKind.Mouse, (ushort)InputMouseButton.Middle, false, KeyModifiers.None);
+        ScriptConfiguration profileScript = CreateEnabledScript(first);
+        ScriptConfiguration profileSetScript = CreateEnabledScript(second);
+        ScriptConfiguration globalScript = CreateEnabledScript(first);
+        Profile profile = seed.Profiles[0] with
+        {
+            ControlMode = DisplayControlMode.Lua,
+            Script = profileScript,
+            Switches = seed.Profiles[0].Switches with
+            {
+                SwitchA = new HotkeyBinding(HotkeyActivationMode.Toggle, first, null, null, null),
+                SwitchB = new HotkeyBinding(HotkeyActivationMode.Hold, null, null, null, second),
+            },
+        };
+        ProfileSet profileSet = seed.ProfileSets[0] with
+        {
+            Script = profileSetScript,
+        };
+
+        ConfigurationValidationResult result = ConfigurationValidator.Validate(
+            seed with
+            {
+                Profiles = [profile],
+                ProfileSets = [profileSet],
+                GlobalScript = globalScript,
+            });
+
+        Assert.True(result.Issues.Count(issue => issue.Message.Contains("Input binding duplicates", StringComparison.Ordinal)) >= 3);
+    }
+
+    [Fact]
+    public void ActiveProfileSetReferenceMustBePresentAndValid()
+    {
+        ConfigurationDocument seed = ConfigurationDefaults.Create();
+        ConfigurationValidationResult missing = ConfigurationValidator.Validate(
+            seed with
+            {
+                ActiveProfileSetId = Guid.Empty,
+            });
+        ConfigurationValidationResult unknown = ConfigurationValidator.Validate(
+            seed with
+            {
+                ActiveProfileSetId = Guid.NewGuid(),
+            });
+        ConfigurationValidationResult emptyCollections = ConfigurationValidator.Validate(
+            seed with
+            {
+                ProfileSets = [],
+                ActiveProfileSetId = Guid.NewGuid(),
+            });
+
+        Assert.Contains(missing.Issues, issue => issue.Path == "$.activeProfileSetId");
+        Assert.Contains(unknown.Issues, issue => issue.Path == "$.activeProfileSetId");
+        Assert.Contains(emptyCollections.Issues, issue => issue.Path == "$.activeProfileSetId");
+    }
+
+    private static ScriptConfiguration CreateEnabledScript(KeyIdentity key) =>
+        new(
+            true,
+            "1",
+            "return eps.script {}",
+            new string('A', 64),
+            [new("binding", "Binding", true, false, true, key)],
+            []);
+
     [Theory]
     [InlineData(30, false, KeyModifiers.Win)]
     [InlineData(91, true, KeyModifiers.None)]

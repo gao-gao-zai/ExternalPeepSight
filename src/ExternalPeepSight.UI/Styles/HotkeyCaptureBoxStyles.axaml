@@ -1,0 +1,59 @@
+<Styles
+    xmlns="https://github.com/avaloniaui"
+    xmlns:controls="using:ExternalPeepSight.UI.Controls">
+    <Style Selector="controls|HotkeyCaptureBox">
+        <Setter Property="MinHeight" Value="40" />
+        <Setter Property="Padding" Value="10,7" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AppControlBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Foreground" Value="{DynamicResource AppSecondaryTextBrush}" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="{TemplateBinding CornerRadius}"
+                    Padding="{TemplateBinding Padding}">
+                    <Grid ColumnDefinitions="24,*">
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            FontFamily="Segoe Fluent Icons"
+                            FontSize="15"
+                            Foreground="{TemplateBinding Foreground}"
+                            Text="&#xE765;" />
+                        <ContentPresenter
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            Content="{TemplateBinding Content}"
+                            Foreground="{TemplateBinding Foreground}" />
+                    </Grid>
+                </Border>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    <Style Selector="controls|HotkeyCaptureBox:pointerover">
+        <Setter Property="Background" Value="{DynamicResource AppHoverBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}" />
+    </Style>
+    <Style Selector="controls|HotkeyCaptureBox:pressed">
+        <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}" />
+    </Style>
+    <Style Selector="controls|HotkeyCaptureBox:focus">
+        <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}" />
+        <Setter Property="BorderThickness" Value="2" />
+    </Style>
+    <Style Selector="controls|HotkeyCaptureBox:capturing">
+        <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}" />
+        <Setter Property="BorderThickness" Value="2" />
+        <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+</Styles>

@@ -146,13 +146,15 @@ public static class EpsxArchive
         }
 
         PortableConfigurationDocument portable = DeserializePortableDocument(documentBytes);
+        ProfileSet[] importedProfileSets = portable.ProfileSets
+            ?? throw new ConfigurationFormatException("EPSX profiles.json requires profileSets.");
         ConfigurationDocument imported = existing with
         {
             SchemaVersion = portable.SchemaVersion,
             Profiles = portable.Profiles
                 ?? throw new ConfigurationFormatException("EPSX profiles.json requires profiles."),
-            ProfileSets = portable.ProfileSets
-                ?? throw new ConfigurationFormatException("EPSX profiles.json requires profileSets."),
+            ProfileSets = importedProfileSets,
+            ActiveProfileSetId = importedProfileSets.FirstOrDefault()?.Id ?? Guid.Empty,
             Assets = portable.Assets
                 ?? throw new ConfigurationFormatException("EPSX profiles.json requires assets."),
         };

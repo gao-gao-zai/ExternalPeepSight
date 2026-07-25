@@ -1,4 +1,4 @@
-#include "input_system.h"
+﻿#include "input_system.h"
 
 #include <winrt/base.h>
 
@@ -27,6 +27,11 @@ using external_peepsight::InputMouseButton;
 using external_peepsight::InputSwitchOperation;
 using external_peepsight::InputVisibilityRule;
 using external_peepsight::RawInputBinding;
+using external_peepsight::ScriptInputBinding;
+using external_peepsight::ScriptInputEvent;
+using external_peepsight::ScriptInputPhase;
+using external_peepsight::ScriptInputStateMachine;
+using external_peepsight::ScriptScope;
 
 constexpr UINT kHookKeyboardMessage = WM_APP + 2U;
 constexpr InputKeyIdentity kKeyA{InputDeviceKind::keyboard, 0x1EU, false, InputModifiers::none};
@@ -91,7 +96,8 @@ BOOL CALLBACK find_input_window(_In_ const HWND window, _In_ const LPARAM parame
 [[nodiscard]] std::string valid_snapshot(const std::string_view modifiers = "none",
                                          const std::string_view selected_profile_id = "profile-a")
 {
-    return "{\"schemaVersion\":6,\"inputBackend\":\"rawInput\",\"profiles\":[{\"id\":\"profile-a\",\"switches\":{"
+    return "{\"schemaVersion\":8,\"inputBackend\":\"rawInput\",\"activeProfileSetId\":\"set-a\","
+           "\"profiles\":[{\"id\":\"profile-a\",\"switches\":{"
            "\"visibilityRule\":\"either\","
            "\"initialStateA\":false,\"initialStateB\":true,"
            "\"switchA\":{\"mode\":\"toggle\",\"toggleKey\":{\"device\":\"keyboard\",\"code\":30,"
@@ -104,7 +110,7 @@ BOOL CALLBACK find_input_window(_In_ const HWND window, _In_ const LPARAM parame
            "\"switchA\":{\"mode\":\"unbound\",\"toggleKey\":null,\"enableKey\":null,\"disableKey\":null,"
            "\"holdKey\":null},\"switchB\":{\"mode\":\"unbound\",\"toggleKey\":null,\"enableKey\":null,"
            "\"disableKey\":null,\"holdKey\":null}}}],\"profileSets\":[{\"selectedProfileId\":\"" +
-           std::string(selected_profile_id) + "\"}]}";
+           std::string(selected_profile_id) + "\",\"id\":\"set-a\"}]}";
 }
 
 TEST(HotkeyStateMachine, ToggleChangesOnceAndSuppressesRepeatedKeyDown)
@@ -353,6 +359,63 @@ TEST(InputBindingPlan, RejectsDuplicateMouseBindingsAcrossSwitches)
     configuration.switch_b = hold_binding(kMouseX1);
 
     EXPECT_THROW(static_cast<void>(external_peepsight::build_input_binding_plan(configuration)), std::invalid_argument);
+}
+
+TEST(InputBindingPlan, IncludesScriptBindingsAndRejectsConflictsWithBasicBindings)
+{
+    InputConfiguration configuration = unbound_configuration();
+    configuration.script_bindings.push_back({kMouseX1, ScriptScope::global, "global", "toggle", true, true});
+
+    const auto plan = external_peepsight::build_input_binding_plan(configuration);
+
+    ASSERT_EQ(1U, plan.script_bindings.size());
+    EXPECT_EQ(kMouseX1, plan.script_bindings.front().key);
+
+    configuration.switch_a = toggle_binding(kMouseX1);
+    EXPECT_THROW(static_cast<void>(external_peepsight::build_input_binding_plan(configuration)), std::invalid_argument);
+}
+
+TEST(InputBindingPlan, RejectsScriptBindingsWithoutIdentifiersOrEvents)
+{
+    InputConfiguration missing_identifier = unbound_configuration();
+    missing_identifier.script_bindings.push_back({kKeyA, ScriptScope::profile, "", "toggle", true, false});
+    InputConfiguration missing_phase = unbound_configuration();
+    missing_phase.script_bindings.push_back({kKeyA, ScriptScope::profile, "profile-a", "toggle", false, false});
+
+    EXPECT_THROW(static_cast<void>(external_peepsight::build_input_binding_plan(missing_identifier)),
+                 std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(external_peepsight::build_input_binding_plan(missing_phase)), std::invalid_argument);
+}
+
+TEST(ScriptInputStateMachine, PublishesPressedAndReleasedAndSuppressesRepeats)
+{
+    ScriptInputStateMachine state_machine;
+    state_machine.configure({{kCtrlKeyA, ScriptScope::profile, "profile-a", "toggle", true, true}});
+
+    const auto pressed = state_machine.handle_key(kCtrlKeyA, true);
+    const auto repeated = state_machine.handle_key(kCtrlKeyA, true);
+    const auto released =
+        state_machine.handle_key({kKeyA.device, kKeyA.code, kKeyA.extended, InputModifiers::none}, false);
+
+    ASSERT_TRUE(pressed.has_value());
+    EXPECT_EQ(ScriptInputPhase::pressed, pressed->phase);
+    EXPECT_FALSE(repeated.has_value());
+    ASSERT_TRUE(released.has_value());
+    EXPECT_EQ(ScriptInputPhase::released, released->phase);
+}
+
+TEST(ScriptInputStateMachine, ResetPublishesDeclaredReleaseEvents)
+{
+    ScriptInputStateMachine state_machine;
+    state_machine.configure({{kMouseX1, ScriptScope::profile_set, "set-a", "hold", false, true}});
+    EXPECT_FALSE(state_machine.handle_key(kMouseX1, true).has_value());
+
+    const std::vector<ScriptInputEvent> released = state_machine.reset_pressed_keys();
+
+    ASSERT_EQ(1U, released.size());
+    EXPECT_EQ(ScriptScope::profile_set, released.front().scope);
+    EXPECT_EQ("hold", released.front().binding_id);
+    EXPECT_EQ(ScriptInputPhase::released, released.front().phase);
 }
 
 TEST(InputBindingPlan, RejectsModeSpecificMissingAndExtraKeys)

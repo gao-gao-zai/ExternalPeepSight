@@ -1,4 +1,4 @@
-#include "input_system.h"
+﻿#include "input_system.h"
 
 #include "diagnostics.h"
 
@@ -439,6 +439,16 @@ void add_low_level_polling_keys(InputBindingPlan &plan)
         add_polling_key(plan, physical_key(binding.key), virtual_key(binding.key));
         add_modifier_polling_keys(plan, binding.key.modifiers);
     }
+    for (const ScriptInputBinding &binding : plan.script_bindings)
+    {
+        if (binding.key.device != InputDeviceKind::keyboard)
+        {
+            continue;
+        }
+
+        add_polling_key(plan, physical_key(binding.key), virtual_key(binding.key));
+        add_modifier_polling_keys(plan, binding.key.modifiers);
+    }
 }
 
 [[nodiscard]] std::string describe_key(const InputKeyIdentity &key)
@@ -509,15 +519,21 @@ void add_low_level_polling_keys(InputBindingPlan &plan)
     }
 
     std::wstring selected_id;
+    const std::wstring active_set_id = root.GetNamedString(L"activeProfileSetId").c_str();
     const JsonArray sets = root.GetNamedArray(L"profileSets");
     for (const auto &item : sets)
     {
-        const IJsonValue selected = item.GetObject().GetNamedValue(L"selectedProfileId");
+        const JsonObject profile_set = item.GetObject();
+        if (profile_set.GetNamedString(L"id") != active_set_id)
+        {
+            continue;
+        }
+        const IJsonValue selected = profile_set.GetNamedValue(L"selectedProfileId");
         if (selected.ValueType() == JsonValueType::String)
         {
             selected_id = selected.GetString().c_str();
-            break;
         }
+        break;
     }
 
     if (selected_id.empty())
@@ -547,7 +563,7 @@ InputConfiguration parse_input_configuration(const std::string_view snapshot_jso
 
     const JsonObject root = JsonObject::Parse(winrt::to_hstring(snapshot_json));
     const double schema_version = root.GetNamedNumber(L"schemaVersion");
-    if (!std::isfinite(schema_version) || schema_version != 6.0)
+    if (!std::isfinite(schema_version) || schema_version != 8.0)
     {
         throw std::invalid_argument("Input configuration schema version is not supported.");
     }
@@ -582,6 +598,24 @@ InputBindingPlan build_input_binding_plan(const InputConfiguration &configuratio
                        next_hotkey_identifier);
     add_switch_binding(plan, used_keys, configuration.switch_b, InputLogicalSwitch::b, configuration.input_backend,
                        next_hotkey_identifier);
+    for (const ScriptInputBinding &binding : configuration.script_bindings)
+    {
+        validate_key(binding.key);
+        if (binding.script_id.empty() || binding.binding_id.empty())
+        {
+            throw std::invalid_argument("Script input binding identifiers cannot be empty.");
+        }
+        if (!binding.pressed && !binding.released)
+        {
+            throw std::invalid_argument("Script input binding must deliver at least one event phase.");
+        }
+        if (std::ranges::find(used_keys, binding.key) != used_keys.end())
+        {
+            throw std::invalid_argument("Input configuration assigns the same key to multiple actions.");
+        }
+        used_keys.push_back(binding.key);
+        plan.script_bindings.push_back(binding);
+    }
     if (configuration.input_backend == InputCaptureBackend::low_level_hook)
     {
         add_low_level_polling_keys(plan);
@@ -856,11 +890,86 @@ bool &HotkeyStateMachine::state(const InputLogicalSwitch target) noexcept
     return target == InputLogicalSwitch::a ? switch_a_ : switch_b_;
 }
 
+void ScriptInputStateMachine::configure(std::vector<ScriptInputBinding> bindings)
+{
+    bindings_ = std::move(bindings);
+    active_inputs_.clear();
+}
+
+std::optional<ScriptInputEvent> ScriptInputStateMachine::handle_key(const InputKeyIdentity key, const bool pressed)
+{
+    const InputPhysicalKey physical = physical_key(key);
+    const auto active = std::ranges::find_if(active_inputs_, [&physical](const ActiveInput &candidate)
+                                             { return candidate.key == physical; });
+    if (pressed)
+    {
+        if (active != active_inputs_.end())
+        {
+            return std::nullopt;
+        }
+
+        const auto binding = std::ranges::find_if(bindings_, [&key](const ScriptInputBinding &candidate)
+                                                  { return candidate.key == key; });
+        if (binding == bindings_.end())
+        {
+            return std::nullopt;
+        }
+        active_inputs_.push_back({physical, *binding});
+        if (!binding->pressed)
+        {
+            return std::nullopt;
+        }
+        return ScriptInputEvent{
+            binding->scope,
+            binding->script_id,
+            binding->binding_id,
+            ScriptInputPhase::pressed,
+        };
+    }
+
+    if (active == active_inputs_.end())
+    {
+        return std::nullopt;
+    }
+    ScriptInputBinding binding = std::move(active->binding);
+    active_inputs_.erase(active);
+    if (!binding.released)
+    {
+        return std::nullopt;
+    }
+    return ScriptInputEvent{
+        binding.scope,
+        std::move(binding.script_id),
+        std::move(binding.binding_id),
+        ScriptInputPhase::released,
+    };
+}
+
+std::vector<ScriptInputEvent> ScriptInputStateMachine::reset_pressed_keys()
+{
+    std::vector<ScriptInputEvent> events;
+    events.reserve(active_inputs_.size());
+    for (ActiveInput &active : active_inputs_)
+    {
+        if (active.binding.released)
+        {
+            events.push_back({
+                active.binding.scope,
+                std::move(active.binding.script_id),
+                std::move(active.binding.binding_id),
+                ScriptInputPhase::released,
+            });
+        }
+    }
+    active_inputs_.clear();
+    return events;
+}
+
 class GlobalInputService::Impl
 {
   public:
-    explicit Impl(StateChanged state_changed)
-        : state_changed_(std::move(state_changed)),
+    Impl(StateChanged state_changed, ScriptInputReceived script_input_received)
+        : state_changed_(std::move(state_changed)), script_input_received_(std::move(script_input_received)),
           worker_(HostThreadRole::input, [this](const std::stop_token stop_token) { run(stop_token); })
     {
         if (!state_changed_)
@@ -1147,6 +1256,7 @@ class GlobalInputService::Impl
         {
             publish(*reset);
         }
+        publish_script_events(script_state_machine_.reset_pressed_keys());
 
         const HWND window = window_.exchange(nullptr, std::memory_order_acq_rel);
         if (session_notifications_registered_ && window != nullptr)
@@ -1357,6 +1467,8 @@ class GlobalInputService::Impl
                 unregister_hotkeys(active_plan_);
                 active_plan_ = {};
                 modifier_keys_.clear();
+                publish_script_events(script_state_machine_.reset_pressed_keys());
+                script_state_machine_.configure({});
                 configured_ = false;
                 if (const auto reset = state_machine_.reset_pressed_keys())
                 {
@@ -1379,6 +1491,8 @@ class GlobalInputService::Impl
         }
         modifier_keys_.clear();
         configured_ = true;
+        publish_script_events(script_state_machine_.reset_pressed_keys());
+        script_state_machine_.configure(active_plan_.script_bindings);
         publish(state_machine_.configure(effective_configuration, active_plan_.raw_bindings));
         return {true, ERROR_SUCCESS, std::nullopt, {}};
     }
@@ -1445,10 +1559,14 @@ class GlobalInputService::Impl
             }
         }
 
-        if (const auto update = state_machine_.handle_key(
-                {physical.device, physical.code, physical.extended, event_modifiers}, pressed))
+        const InputKeyIdentity identity{physical.device, physical.code, physical.extended, event_modifiers};
+        if (const auto update = state_machine_.handle_key(identity, pressed))
         {
             publish(*update);
+        }
+        if (const auto script_event = script_state_machine_.handle_key(identity, pressed))
+        {
+            publish_script_event(*script_event);
         }
     }
 
@@ -1469,6 +1587,7 @@ class GlobalInputService::Impl
         {
             publish(*update);
         }
+        publish_script_events(script_state_machine_.reset_pressed_keys());
     }
 
     void poll_keyboard_state()
@@ -1519,7 +1638,24 @@ class GlobalInputService::Impl
         state_changed_(snapshot);
     }
 
+    void publish_script_event(const ScriptInputEvent &event) const
+    {
+        if (script_input_received_)
+        {
+            script_input_received_(event);
+        }
+    }
+
+    void publish_script_events(const std::vector<ScriptInputEvent> &events) const
+    {
+        for (const ScriptInputEvent &event : events)
+        {
+            publish_script_event(event);
+        }
+    }
+
     StateChanged state_changed_;
+    ScriptInputReceived script_input_received_;
     HostWorkerThread worker_;
     std::mutex startup_mutex_;
     std::condition_variable startup_changed_;
@@ -1527,6 +1663,7 @@ class GlobalInputService::Impl
     std::exception_ptr runtime_failure_;
     std::atomic<HWND> window_ = nullptr;
     HotkeyStateMachine state_machine_;
+    ScriptInputStateMachine script_state_machine_;
     InputBindingPlan active_plan_;
     InputCaptureBackend active_backend_ = InputCaptureBackend::raw_input;
     std::vector<InputPhysicalKey> modifier_keys_;
@@ -1543,8 +1680,8 @@ class GlobalInputService::Impl
 
 std::atomic<GlobalInputService::Impl *> GlobalInputService::Impl::hook_owner_ = nullptr;
 
-GlobalInputService::GlobalInputService(StateChanged state_changed)
-    : impl_(std::make_unique<Impl>(std::move(state_changed)))
+GlobalInputService::GlobalInputService(StateChanged state_changed, ScriptInputReceived script_input_received)
+    : impl_(std::make_unique<Impl>(std::move(state_changed), std::move(script_input_received)))
 {
 }
 

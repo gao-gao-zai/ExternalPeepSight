@@ -1,4 +1,4 @@
-<UserControl
+﻿<UserControl
     x:Class="ExternalPeepSight.UI.Views.CrosshairEditorView"
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -454,50 +454,69 @@
 
                     <TabItem
                         Classes="editor-tab"
-                        Header="{DynamicResource Loc.Crosshair.TabSwitches}">
+                        Header="{DynamicResource Loc.Crosshair.TabDisplayControl}">
                         <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-                        <StackPanel Spacing="16">
-                            <Border Classes="inspector-section">
-                                <Grid ColumnDefinitions="*,28,*">
-                                    <StackPanel Spacing="10">
-                                        <TextBlock Classes="section-title" Text="{DynamicResource Loc.Switch.VisibilityRule}" />
-                                        <ComboBox
-                                            x:CompileBindings="False"
-                                            ItemsSource="{Binding Switches.VisibilityRules}"
-                                            DisplayMemberBinding="{Binding Name}"
-                                            SelectedValue="{Binding Switches.VisibilityRule, Mode=TwoWay}"
-                                            SelectedValueBinding="{Binding Value}" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="2" Spacing="8">
-                                        <TextBlock Classes="section-title" Text="{DynamicResource Loc.Switch.InitialState}" />
-                                        <Grid ColumnDefinitions="*,Auto">
-                                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Switch.SwitchA}" />
-                                            <CheckBox
-                                                Grid.Column="1"
-                                                IsChecked="{Binding Switches.InitialStateA, Mode=TwoWay}" />
-                                        </Grid>
-                                        <Grid ColumnDefinitions="*,Auto">
-                                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Switch.SwitchB}" />
-                                            <CheckBox
-                                                Grid.Column="1"
-                                                IsChecked="{Binding Switches.InitialStateB, Mode=TwoWay}" />
+                            <StackPanel Spacing="16">
+                                <Border Classes="inspector-section">
+                                    <StackPanel Spacing="12">
+                                        <TextBlock Classes="section-title" Text="{DynamicResource Loc.Script.ControlMode}" />
+                                        <Grid ColumnDefinitions="*,8,*">
+                                            <RadioButton
+                                                Classes="segment"
+                                                Content="{DynamicResource Loc.Script.Basic}"
+                                                IsChecked="{Binding IsBasicControlMode, Mode=TwoWay}" />
+                                            <RadioButton
+                                                Grid.Column="2"
+                                                Classes="segment"
+                                                Content="{DynamicResource Loc.Script.Advanced}"
+                                                IsChecked="{Binding IsAdvancedControlMode, Mode=TwoWay}" />
                                         </Grid>
                                     </StackPanel>
-                                </Grid>
-                            </Border>
-                            <Border Classes="inspector-section">
-                                <StackPanel Spacing="12">
-                                    <TextBlock Classes="section-title" Text="{DynamicResource Loc.Switch.SwitchA}" />
-                                    <ContentControl Content="{Binding Switches.SwitchA}" />
+                                </Border>
+                                <StackPanel IsVisible="{Binding IsBasicControlMode}" Spacing="16">
+                                    <Border Classes="inspector-section">
+                                        <Grid ColumnDefinitions="*,28,*">
+                                            <StackPanel Spacing="10">
+                                                <TextBlock Classes="section-title" Text="{DynamicResource Loc.Switch.VisibilityRule}" />
+                                                <ComboBox
+                                                    x:CompileBindings="False"
+                                                    ItemsSource="{Binding Switches.VisibilityRules}"
+                                                    DisplayMemberBinding="{Binding Name}"
+                                                    SelectedValue="{Binding Switches.VisibilityRule, Mode=TwoWay}"
+                                                    SelectedValueBinding="{Binding Value}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2" Spacing="8">
+                                                <TextBlock Classes="section-title" Text="{DynamicResource Loc.Switch.InitialState}" />
+                                                <Grid ColumnDefinitions="*,Auto">
+                                                    <TextBlock Classes="field-label" Text="{DynamicResource Loc.Switch.SwitchA}" />
+                                                    <CheckBox Grid.Column="1" IsChecked="{Binding Switches.InitialStateA, Mode=TwoWay}" />
+                                                </Grid>
+                                                <Grid ColumnDefinitions="*,Auto">
+                                                    <TextBlock Classes="field-label" Text="{DynamicResource Loc.Switch.SwitchB}" />
+                                                    <CheckBox Grid.Column="1" IsChecked="{Binding Switches.InitialStateB, Mode=TwoWay}" />
+                                                </Grid>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                    <Border Classes="inspector-section">
+                                        <StackPanel Spacing="12">
+                                            <TextBlock Classes="section-title" Text="{DynamicResource Loc.Switch.SwitchA}" />
+                                            <ContentControl Content="{Binding Switches.SwitchA}" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Classes="inspector-section last">
+                                        <StackPanel Spacing="12">
+                                            <TextBlock Classes="section-title" Text="{DynamicResource Loc.Switch.SwitchB}" />
+                                            <ContentControl Content="{Binding Switches.SwitchB}" />
+                                        </StackPanel>
+                                    </Border>
                                 </StackPanel>
-                            </Border>
-                            <Border Classes="inspector-section last">
-                                <StackPanel Spacing="12">
-                                    <TextBlock Classes="section-title" Text="{DynamicResource Loc.Switch.SwitchB}" />
-                                    <ContentControl Content="{Binding Switches.SwitchB}" />
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
+                                <Border
+                                    Classes="inspector-section last"
+                                    IsVisible="{Binding IsAdvancedControlMode}">
+                                    <views:ScriptEditorView DataContext="{Binding Script}" />
+                                </Border>
+                            </StackPanel>
                         </ScrollViewer>
                     </TabItem>
                 </TabControl>

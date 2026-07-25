@@ -51,6 +51,65 @@ public enum HotkeyActivationMode
 }
 
 /// <summary>
+/// Selects the runtime that controls overlay visibility for a profile.
+/// </summary>
+public enum DisplayControlMode
+{
+    Basic,
+    Lua,
+}
+
+/// <summary>
+/// Identifies the configuration object owned by a Lua script.
+/// </summary>
+public enum ScriptScope
+{
+    Profile,
+    ProfileSet,
+    Global,
+}
+
+/// <summary>
+/// Identifies the phase of an input event exposed to a Lua script.
+/// </summary>
+public enum ScriptInputPhase
+{
+    Pressed,
+    Released,
+}
+
+/// <summary>
+/// Identifies the value type declared by a Lua script setting.
+/// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Naming",
+    "CA1720:Identifier contains type name",
+    Justification = "These member names are the stable script API type names exposed to users.")]
+public enum ScriptSettingType
+{
+    Boolean,
+    Integer,
+    Double,
+    String,
+    Enum,
+}
+
+/// <summary>
+/// Selects the trusted editor control used to present a script setting.
+/// </summary>
+public enum ScriptUiControlType
+{
+    Auto,
+    Switch,
+    Checkbox,
+    Slider,
+    Number,
+    Textbox,
+    Select,
+    Segmented,
+}
+
+/// <summary>
 /// Identifies one of the two logical switches.
 /// </summary>
 public enum LogicalSwitch
@@ -292,6 +351,78 @@ public sealed record HotkeyBinding(
     KeyIdentity? HoldKey);
 
 /// <summary>
+/// Defines one script-declared binding slot and its user-selected physical key.
+/// </summary>
+public sealed record ScriptBindingSlot(
+    string Id,
+    string DisplayName,
+    bool Pressed,
+    bool Released,
+    bool Enabled,
+    KeyIdentity? Key);
+
+/// <summary>
+/// Defines one script-declared setting and its current user value.
+/// </summary>
+public sealed record ScriptSetting(
+    string Id,
+    string DisplayName,
+    ScriptSettingType Type,
+    string Value,
+    string[] Options,
+    double? Minimum,
+    double? Maximum);
+
+/// <summary>
+/// Defines a simple equality condition controlling one script UI item's visibility.
+/// </summary>
+public sealed record ScriptUiVisibilityCondition(
+    string SettingId,
+    string EqualsValue);
+
+/// <summary>
+/// Defines trusted presentation metadata for one script setting.
+/// </summary>
+public sealed record ScriptUiItem(
+    string SettingId,
+    ScriptUiControlType Control,
+    string Description,
+    string Unit,
+    double? Step,
+    ScriptUiVisibilityCondition? VisibleWhen);
+
+/// <summary>
+/// Defines one ordered section in a script-provided settings layout.
+/// </summary>
+public sealed record ScriptUiSection(
+    string Id,
+    string DisplayName,
+    string Description,
+    bool Collapsible,
+    bool DefaultExpanded,
+    int Columns,
+    ScriptUiItem[] Items);
+
+/// <summary>
+/// Defines the complete trusted settings layout declared by a script.
+/// </summary>
+public sealed record ScriptUiLayout(
+    ScriptUiSection[] Sections);
+
+/// <summary>
+/// Stores a Lua source document together with the declarations and user values
+/// produced by its last successful validation.
+/// </summary>
+public sealed record ScriptConfiguration(
+    bool Enabled,
+    string ApiVersion,
+    string Source,
+    string SourceHash,
+    ScriptBindingSlot[] Bindings,
+    ScriptSetting[] Settings,
+    ScriptUiLayout? Ui = null);
+
+/// <summary>
 /// Defines both logical switches, their hotkeys, and their visibility rule.
 /// </summary>
 public sealed record SwitchConfiguration(
@@ -322,7 +453,9 @@ public sealed record Profile(
     OverlayMode ActiveMode,
     Crosshair Crosshair,
     ImageOverlay Image,
-    SwitchConfiguration Switches);
+    SwitchConfiguration Switches,
+    DisplayControlMode ControlMode = DisplayControlMode.Basic,
+    ScriptConfiguration? Script = null);
 
 /// <summary>
 /// Defines an ordered group of profiles.
@@ -331,7 +464,8 @@ public sealed record ProfileSet(
     Guid Id,
     string Name,
     Guid[] ProfileIds,
-    Guid? SelectedProfileId);
+    Guid? SelectedProfileId,
+    ScriptConfiguration? Script = null);
 
 /// <summary>
 /// Defines the versioned on-disk application state document.
@@ -354,6 +488,11 @@ public sealed record ConfigurationDocument
     public ProfileSet[] ProfileSets { get; init; } = [];
 
     /// <summary>
+    /// Gets the explicitly active profile set.
+    /// </summary>
+    public Guid ActiveProfileSetId { get; init; }
+
+    /// <summary>
     /// Gets the image resource metadata referenced by profiles.
     /// </summary>
     public AssetReference[] Assets { get; init; } = [];
@@ -374,6 +513,11 @@ public sealed record ConfigurationDocument
     /// </summary>
     public ToastConfiguration Toasts { get; init; } =
         new(true, ToastPosition.TopCenter, 1500, "Segoe UI", 18, RgbaColor.White, new RgbaColor(0, 0, 0, 180));
+
+    /// <summary>
+    /// Gets the optional enabled global Lua script.
+    /// </summary>
+    public ScriptConfiguration? GlobalScript { get; init; }
 }
 
 /// <summary>
@@ -418,6 +562,7 @@ public static class ConfigurationDefaults
             [
                 new(profileSetId, "Default", [profileId], profileId),
             ],
+            ActiveProfileSetId = profileSetId,
         };
     }
 

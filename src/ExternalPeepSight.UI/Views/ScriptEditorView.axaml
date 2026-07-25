@@ -1,0 +1,245 @@
+﻿<UserControl
+    x:Class="ExternalPeepSight.UI.Views.ScriptEditorView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:ExternalPeepSight.UI.Controls"
+    xmlns:fa="using:FluentAvalonia.UI.Controls"
+    xmlns:vm="using:ExternalPeepSight.UI.ViewModels"
+    x:DataType="vm:ScriptAdvancedSummaryViewModel">
+    <UserControl.Styles>
+        <StyleInclude Source="avares://ExternalPeepSight.UI/Styles/HotkeyCaptureBoxStyles.axaml" />
+        <Style Selector="Border.script-setting">
+            <Setter Property="Padding" Value="0,8" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+        </Style>
+    </UserControl.Styles>
+    <UserControl.DataTemplates>
+        <DataTemplate x:DataType="vm:ScriptBindingEditorViewModel">
+            <Border Classes="inspector-section">
+                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                    <StackPanel Spacing="3">
+                        <TextBlock Classes="field-label" Text="{Binding DisplayName}" />
+                        <TextBlock
+                            Foreground="{DynamicResource AppSecondaryTextBrush}"
+                            Text="{Binding Id}" />
+                    </StackPanel>
+                    <CheckBox
+                        Grid.Column="1"
+                        IsChecked="{Binding Enabled, Mode=TwoWay}" />
+                    <controls:HotkeyCaptureBox
+                        Grid.Row="1"
+                        Grid.ColumnSpan="2"
+                        Margin="0,8,0,0"
+                        CapturingText="{DynamicResource Loc.Hotkey.Capturing}"
+                        PlaceholderText="{DynamicResource Loc.Script.Capture}"
+                        Value="{Binding Key, Mode=TwoWay}" />
+                </Grid>
+            </Border>
+        </DataTemplate>
+        <DataTemplate x:DataType="vm:ScriptSettingEditorViewModel">
+            <Border Classes="script-setting">
+                <StackPanel Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Spacing="2">
+                            <TextBlock Classes="field-label" Text="{Binding DisplayName}" />
+                            <TextBlock
+                                Classes="secondary"
+                                FontSize="11"
+                                IsVisible="{Binding HasDescription}"
+                                Text="{Binding Description}"
+                                TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch
+                            Grid.Column="1"
+                            IsChecked="{Binding BooleanValue, Mode=TwoWay}"
+                            IsVisible="{Binding UsesSwitch}" />
+                        <CheckBox
+                            Grid.Column="1"
+                            IsChecked="{Binding BooleanValue, Mode=TwoWay}"
+                            IsVisible="{Binding UsesCheckbox}" />
+                        <Grid
+                            Grid.Column="1"
+                            ColumnDefinitions="140,Auto"
+                            IsVisible="{Binding UsesNumber}">
+                            <fa:FANumberBox
+                                Maximum="{Binding NumericMaximum}"
+                                Minimum="{Binding NumericMinimum}"
+                                SmallChange="{Binding Step}"
+                                Value="{Binding NumericValue, Mode=TwoWay}" />
+                            <TextBlock
+                                Grid.Column="1"
+                                Margin="8,0,0,0"
+                                VerticalAlignment="Center"
+                                Classes="secondary"
+                                IsVisible="{Binding HasUnit}"
+                                Text="{Binding Unit}" />
+                        </Grid>
+                    </Grid>
+                    <Grid
+                        ColumnDefinitions="*,8,90,Auto"
+                        IsVisible="{Binding UsesSlider}">
+                        <Slider
+                            VerticalAlignment="Center"
+                            Maximum="{Binding NumericMaximum}"
+                            Minimum="{Binding NumericMinimum}"
+                            TickFrequency="{Binding Step}"
+                            Value="{Binding NumericValue, Mode=TwoWay}" />
+                        <fa:FANumberBox
+                            Grid.Column="2"
+                            Maximum="{Binding NumericMaximum}"
+                            Minimum="{Binding NumericMinimum}"
+                            SmallChange="{Binding Step}"
+                            Value="{Binding NumericValue, Mode=TwoWay}" />
+                        <TextBlock
+                            Grid.Column="3"
+                            Margin="8,0,0,0"
+                            VerticalAlignment="Center"
+                            Classes="secondary"
+                            IsVisible="{Binding HasUnit}"
+                            Text="{Binding Unit}" />
+                    </Grid>
+                    <ComboBox
+                        ItemsSource="{Binding Options}"
+                        SelectedItem="{Binding Value, Mode=TwoWay}"
+                        IsVisible="{Binding UsesSelect}" />
+                    <TextBox
+                        Text="{Binding Value, Mode=TwoWay}"
+                        IsVisible="{Binding UsesTextbox}" />
+                    <ItemsControl
+                        ItemsSource="{Binding SegmentedOptions}"
+                        IsVisible="{Binding UsesSegmented}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ScriptSettingOptionViewModel">
+                                <RadioButton
+                                    Classes="segment"
+                                    Content="{Binding Value}"
+                                    GroupName="{Binding GroupName}"
+                                    IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                    Margin="0,0,6,6" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+        <DataTemplate x:DataType="vm:ScriptUiSettingRowViewModel">
+            <Grid ColumnDefinitions="*,12,*">
+                <ContentControl Content="{Binding First}" />
+                <ContentControl
+                    Grid.Column="2"
+                    Content="{Binding Second}"
+                    IsVisible="{Binding HasSecond}" />
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:DataType="vm:ScriptUiSectionEditorViewModel">
+            <StackPanel IsVisible="{Binding HasVisibleItems}">
+                <Expander
+                    Header="{Binding DisplayName}"
+                    IsExpanded="{Binding IsExpanded, Mode=TwoWay}"
+                    IsVisible="{Binding Collapsible}">
+                    <StackPanel Margin="0,8,0,0" Spacing="6">
+                        <TextBlock
+                            Classes="secondary"
+                            IsVisible="{Binding HasDescription}"
+                            Text="{Binding Description}"
+                            TextWrapping="Wrap" />
+                        <ItemsControl ItemsSource="{Binding Rows}" />
+                    </StackPanel>
+                </Expander>
+                <StackPanel IsVisible="{Binding !Collapsible}" Spacing="6">
+                    <TextBlock Classes="section-title" Text="{Binding DisplayName}" />
+                    <TextBlock
+                        Classes="secondary"
+                        IsVisible="{Binding HasDescription}"
+                        Text="{Binding Description}"
+                        TextWrapping="Wrap" />
+                    <ItemsControl ItemsSource="{Binding Rows}" />
+                </StackPanel>
+            </StackPanel>
+        </DataTemplate>
+    </UserControl.DataTemplates>
+    <StackPanel Spacing="16">
+        <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="3">
+                <TextBlock
+                    Classes="section-title"
+                    Text="{DynamicResource Loc.Script.CurrentProfileAdvanced}" />
+                <TextBlock
+                    Classes="secondary"
+                    IsVisible="{Binding HasScript}"
+                    Text="{DynamicResource Loc.Script.RuntimeConfigurationHint}" />
+            </StackPanel>
+            <Button
+                Grid.Column="1"
+                Command="{Binding OpenScriptManagerCommand}"
+                ToolTip.Tip="{DynamicResource Loc.Script.OpenManager}">
+                <StackPanel Orientation="Horizontal" Spacing="7">
+                    <TextBlock
+                        FontFamily="Segoe Fluent Icons"
+                        Text="&#xE8A7;" />
+                    <TextBlock Text="{DynamicResource Loc.Script.OpenManager}" />
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <Border
+            Padding="12"
+            Background="{DynamicResource AppSubtleSurfaceBrush}"
+            CornerRadius="4"
+            IsVisible="{Binding !HasScript}">
+            <TextBlock
+                Classes="secondary"
+                Text="{DynamicResource Loc.Script.NoProfileScript}"
+                TextWrapping="Wrap" />
+        </Border>
+
+        <Grid
+            ColumnDefinitions="*,Auto"
+            IsVisible="{Binding HasScript}">
+            <TextBlock
+                Classes="field-label"
+                Text="{DynamicResource Loc.Common.Enabled}" />
+            <TextBlock
+                Grid.Column="1"
+                Foreground="{DynamicResource AppSuccessBrush}"
+                IsVisible="{Binding IsScriptEnabled}"
+                Text="{DynamicResource Loc.Script.EnabledState}" />
+            <TextBlock
+                Grid.Column="1"
+                Classes="secondary"
+                IsVisible="{Binding !IsScriptEnabled}"
+                Text="{DynamicResource Loc.Script.DisabledState}" />
+        </Grid>
+
+        <StackPanel IsVisible="{Binding HasSettings}" Spacing="10">
+            <TextBlock
+                Classes="section-title"
+                Text="{DynamicResource Loc.Script.RegisteredSettings}" />
+            <ItemsControl
+                IsVisible="{Binding UsesAutomaticUi}"
+                ItemsSource="{Binding Settings}" />
+            <ItemsControl
+                IsVisible="{Binding HasCustomUi}"
+                ItemsSource="{Binding Sections}" />
+        </StackPanel>
+
+        <StackPanel IsVisible="{Binding HasBindings}" Spacing="10">
+            <TextBlock
+                Classes="section-title"
+                Text="{DynamicResource Loc.Script.RegisteredBindings}" />
+            <ItemsControl ItemsSource="{Binding Bindings}" />
+        </StackPanel>
+
+        <TextBlock
+            Classes="secondary"
+            IsVisible="{Binding HasNoDeclarations}"
+            Text="{DynamicResource Loc.Script.NoDeclarations}"
+            TextWrapping="Wrap" />
+    </StackPanel>
+</UserControl>

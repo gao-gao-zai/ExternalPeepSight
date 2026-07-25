@@ -1,6 +1,7 @@
-#pragma once
+﻿#pragma once
 
 #include "host_threads.h"
+#include "script_runtime.h"
 
 #include <windows.h>
 
@@ -141,6 +142,25 @@ struct InputHotkeyBinding
     std::optional<InputKeyIdentity> hold_key;
 };
 
+/// Defines one active script binding and its user-selected physical key.
+struct ScriptInputBinding
+{
+    /// Physical key selected by the user.
+    InputKeyIdentity key;
+    /// Scope that owns the binding slot.
+    ScriptScope scope;
+    /// Stable owning script identifier.
+    std::string script_id;
+    /// Stable script-declared binding identifier.
+    std::string binding_id;
+    /// Whether a key-down event is delivered.
+    bool pressed;
+    /// Whether a key-up event is delivered.
+    bool released;
+
+    bool operator==(const ScriptInputBinding &) const = default;
+};
+
 /// Defines the complete input configuration consumed by the Host.
 struct InputConfiguration
 {
@@ -156,6 +176,21 @@ struct InputConfiguration
     InputHotkeyBinding switch_a;
     /// Binding for logical switch B.
     InputHotkeyBinding switch_b;
+    /// Active Lua binding slots included in the same conflict-checked plan.
+    std::vector<ScriptInputBinding> script_bindings;
+};
+
+/// One normalized script input event published by the Input thread.
+struct ScriptInputEvent
+{
+    /// Scope that owns the binding slot.
+    ScriptScope scope;
+    /// Stable owning script identifier.
+    std::string script_id;
+    /// Stable script-declared binding identifier.
+    std::string binding_id;
+    /// Physical transition phase.
+    ScriptInputPhase phase;
 };
 
 /// Operation produced by one configured input binding.
@@ -222,6 +257,8 @@ struct InputBindingPlan
     std::vector<RegisteredHotkeyBinding> registered_hotkeys;
     /// Keyboard keys sampled as a fallback by the low-level hook backend.
     std::vector<InputPollingKey> polling_keys;
+    /// Script bindings handled by Raw Input or the low-level hook backend.
+    std::vector<ScriptInputBinding> script_bindings;
 };
 
 /// Current logical input state published by the Input thread.
@@ -310,15 +347,41 @@ class HotkeyStateMachine
     std::vector<ActiveHold> active_holds_;
 };
 
+/// Deterministic script-binding state machine shared by all input backends.
+class ScriptInputStateMachine
+{
+  public:
+    /// Replaces all script bindings and clears active physical inputs.
+    void configure(std::vector<ScriptInputBinding> bindings);
+
+    /// Handles one physical transition and returns zero or one normalized event.
+    [[nodiscard]] std::optional<ScriptInputEvent> handle_key(InputKeyIdentity key, bool pressed);
+
+    /// Releases every active binding that declared a release event.
+    [[nodiscard]] std::vector<ScriptInputEvent> reset_pressed_keys();
+
+  private:
+    struct ActiveInput
+    {
+        InputPhysicalKey key;
+        ScriptInputBinding binding;
+    };
+
+    std::vector<ScriptInputBinding> bindings_;
+    std::vector<ActiveInput> active_inputs_;
+};
+
 /// Owns the hidden Input-thread window and all global keyboard backends.
 class GlobalInputService
 {
   public:
     /// Callback invoked on the Input thread after observable state changes.
     using StateChanged = std::function<void(InputStateSnapshot)>;
+    /// Callback invoked on the Input thread for a normalized script binding event.
+    using ScriptInputReceived = std::function<void(ScriptInputEvent)>;
 
     /// Creates an input service with a non-blocking state publication callback.
-    explicit GlobalInputService(StateChanged state_changed);
+    explicit GlobalInputService(StateChanged state_changed, ScriptInputReceived script_input_received = {});
 
     GlobalInputService(const GlobalInputService &) = delete;
     GlobalInputService &operator=(const GlobalInputService &) = delete;

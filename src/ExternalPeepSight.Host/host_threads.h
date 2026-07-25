@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <windows.h>
 
@@ -20,6 +20,7 @@ enum class HostThreadRole
     input,
     render,
     ipc,
+    script,
 };
 
 /// Observable lifecycle state of a Host worker thread.

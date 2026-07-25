@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Release",
@@ -160,7 +160,7 @@ if (-not $SkipNative) {
         -File `
         | Where-Object {
             $_.Extension -in ".cpp", ".h", ".hpp" -and
-            $_.FullName -notmatch "\\(build|artifacts|bin|obj)\\"
+            $_.FullName -notmatch "\\(build|artifacts|bin|obj|third_party)\\"
         }
 
     if ($clangFormat -and $cppFiles) {

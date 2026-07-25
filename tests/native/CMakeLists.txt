@@ -1,4 +1,4 @@
-include(FetchContent)
+﻿include(FetchContent)
 
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_Declare(
@@ -16,6 +16,9 @@ add_executable(ExternalPeepSight.Native.Tests
     prototype_contracts_tests.cpp
     render_configuration_tests.cpp
     render_state_tests.cpp
+    script_runtime_tests.cpp
+    script_coordinator_tests.cpp
+    script_command_configuration_tests.cpp
     smoke_test.cpp
     ../../src/ExternalPeepSight.Host/current_user_security.cpp
     ../../src/ExternalPeepSight.Host/diagnostics.cpp
@@ -30,6 +33,9 @@ add_executable(ExternalPeepSight.Native.Tests
     ../../src/ExternalPeepSight.Host/render_configuration.cpp
     ../../src/ExternalPeepSight.Host/render_state.cpp
     ../../src/ExternalPeepSight.Host/render_recovery.cpp
+    ../../src/ExternalPeepSight.Host/script_runtime.cpp
+    ../../src/ExternalPeepSight.Host/script_coordinator.cpp
+    ../../src/ExternalPeepSight.Host/script_command_configuration.cpp
     ../../src/ExternalPeepSight.Host/single_instance.cpp
 )
 
@@ -69,6 +75,7 @@ target_link_libraries(ExternalPeepSight.Native.Tests PRIVATE
     windowsapp
     wtsapi32
     xmllite
+    ExternalPeepSight.Lua
 )
 
 include(GoogleTest)

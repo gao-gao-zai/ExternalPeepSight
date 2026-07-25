@@ -1,6 +1,6 @@
-cmake_minimum_required(VERSION 3.28)
+﻿cmake_minimum_required(VERSION 3.28)
 
-project(ExternalPeepSightNative LANGUAGES CXX RC)
+project(ExternalPeepSightNative LANGUAGES C CXX RC)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,6 +16,7 @@ endif()
 
 include(CTest)
 
+add_subdirectory(third_party/lua-5.4.8)
 add_subdirectory(src/ExternalPeepSight.Host)
 
 if(BUILD_TESTING)

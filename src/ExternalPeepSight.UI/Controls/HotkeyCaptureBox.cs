@@ -1,5 +1,6 @@
 ﻿using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Metadata;
 using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -9,6 +10,7 @@ using ConfigurationKeyModifiers = ExternalPeepSight.Core.KeyModifiers;
 
 namespace ExternalPeepSight.UI.Controls;
 
+[PseudoClasses(":capturing")]
 internal sealed class HotkeyCaptureBox : Button
 {
     public static readonly StyledProperty<KeyIdentity?> ValueProperty =
@@ -19,6 +21,9 @@ internal sealed class HotkeyCaptureBox : Button
     public static readonly StyledProperty<string?> PlaceholderTextProperty =
         AvaloniaProperty.Register<HotkeyCaptureBox, string?>(nameof(PlaceholderText));
 
+    public static readonly StyledProperty<string?> CapturingTextProperty =
+        AvaloniaProperty.Register<HotkeyCaptureBox, string?>(nameof(CapturingText));
+
     public HotkeyCaptureBox()
     {
         AddHandler(KeyDownEvent, OnCaptureKeyDown, handledEventsToo: true);
@@ -27,6 +32,8 @@ internal sealed class HotkeyCaptureBox : Button
             OnCapturePointerPressed,
             RoutingStrategies.Tunnel,
             handledEventsToo: true);
+        Click += OnCaptureRequested;
+        LostFocus += OnCaptureLostFocus;
         UpdateContent();
     }
 
@@ -42,10 +49,20 @@ internal sealed class HotkeyCaptureBox : Button
         set => SetValue(PlaceholderTextProperty, value);
     }
 
+    public string? CapturingText
+    {
+        get => GetValue(CapturingTextProperty);
+        set => SetValue(CapturingTextProperty, value);
+    }
+
+    internal bool IsCapturing { get; private set; }
+
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property == ValueProperty || change.Property == PlaceholderTextProperty)
+        if (change.Property == ValueProperty ||
+            change.Property == PlaceholderTextProperty ||
+            change.Property == CapturingTextProperty)
         {
             UpdateContent();
         }
@@ -53,9 +70,15 @@ internal sealed class HotkeyCaptureBox : Button
 
     private void OnCaptureKeyDown(object? sender, KeyEventArgs args)
     {
+        if (!IsCapturing)
+        {
+            return;
+        }
+
         if (args.PhysicalKey is PhysicalKey.Backspace or PhysicalKey.Delete)
         {
             Value = null;
+            SetCapturing(false);
             args.Handled = true;
             return;
         }
@@ -63,6 +86,7 @@ internal sealed class HotkeyCaptureBox : Button
         if (PhysicalKeyMapper.TryCreate(args.PhysicalKey, args.KeyModifiers, out KeyIdentity identity))
         {
             Value = identity;
+            SetCapturing(false);
         }
 
         args.Handled = true;
@@ -70,7 +94,7 @@ internal sealed class HotkeyCaptureBox : Button
 
     private void OnCapturePointerPressed(object? sender, PointerPressedEventArgs args)
     {
-        if (!IsKeyboardFocusWithin)
+        if (!IsCapturing)
         {
             return;
         }
@@ -92,13 +116,38 @@ internal sealed class HotkeyCaptureBox : Button
                 (ushort)button.Value,
                 false,
                 PhysicalKeyMapper.MapModifiers(args.KeyModifiers));
+            SetCapturing(false);
             args.Handled = true;
         }
     }
 
+    private void OnCaptureRequested(object? sender, RoutedEventArgs args)
+    {
+        SetCapturing(true);
+    }
+
+    private void OnCaptureLostFocus(object? sender, RoutedEventArgs args)
+    {
+        SetCapturing(false);
+    }
+
+    private void SetCapturing(bool value)
+    {
+        if (IsCapturing == value)
+        {
+            return;
+        }
+
+        IsCapturing = value;
+        PseudoClasses.Set(":capturing", value);
+        UpdateContent();
+    }
+
     private void UpdateContent()
     {
-        Content = Value is null
+        Content = IsCapturing
+            ? CapturingText ?? PlaceholderText ?? string.Empty
+            : Value is null
             ? PlaceholderText ?? string.Empty
             : HotkeyText.Format(Value);
     }

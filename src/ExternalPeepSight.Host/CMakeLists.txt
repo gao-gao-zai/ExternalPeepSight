@@ -1,4 +1,4 @@
-add_executable(ExternalPeepSight.Host WIN32
+﻿add_executable(ExternalPeepSight.Host WIN32
     current_user_security.cpp
     current_user_security.h
     diagnostics.cpp
@@ -31,6 +31,12 @@ add_executable(ExternalPeepSight.Host WIN32
     render_state.h
     render_recovery.cpp
     render_recovery.h
+    script_runtime.cpp
+    script_runtime.h
+    script_coordinator.cpp
+    script_coordinator.h
+    script_command_configuration.cpp
+    script_command_configuration.h
     single_instance.cpp
     single_instance.h
     tray_icon.cpp
@@ -79,4 +85,5 @@ target_link_libraries(ExternalPeepSight.Host PRIVATE
     windowscodecs
     wtsapi32
     xmllite
+    ExternalPeepSight.Lua
 )

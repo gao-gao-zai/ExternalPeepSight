@@ -1,4 +1,4 @@
-# ExternalPeepSight
+﻿# ExternalPeepSight
 
 Windows 外置准星软件。
 
@@ -7,6 +7,7 @@ Windows 外置准星软件。
 - [需求规格说明](docs/需求文档.md)
 - [技术实现方案](docs/技术实现方案.md)
 - [项目实施计划](docs/项目实施计划.md)
+- [Lua 脚本编写帮助](docs/脚本编写帮助.md)
 - [阶段 1 验证记录](docs/阶段1验证记录.md)
 
 ## 技术栈

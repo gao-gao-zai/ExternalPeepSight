@@ -34,7 +34,7 @@ internal sealed class ConfigurationWorkspace : ObservableObject, IDisposable
         this.localization = localization;
         document = initialDocument;
         lastHostAcceptedDocument = initialDocument;
-        selectedProfileSetId = initialDocument.ProfileSets.FirstOrDefault()?.Id ?? Guid.Empty;
+        selectedProfileSetId = initialDocument.ActiveProfileSetId;
         selectedProfileId = ResolveSelectedProfileId(initialDocument, selectedProfileSetId);
         isHostConnected = hostSession.IsConnected;
         hostSession.StateChanged += OnHostStateChanged;
@@ -85,6 +85,18 @@ internal sealed class ConfigurationWorkspace : ObservableObject, IDisposable
     public void DismissError() => ErrorMessage = null;
 
     public void ReportError(string resourceKey) => ErrorMessage = localization[resourceKey];
+
+    public Task<JsonElement> ValidateScriptAsync(
+        JsonElement payload,
+        CancellationToken cancellationToken = default)
+    {
+        if (hostSession is not IScriptValidationSession validationSession)
+        {
+            throw new InvalidOperationException("The connected Host does not support Lua script validation.");
+        }
+
+        return validationSession.ValidateScriptAsync(payload, cancellationToken);
+    }
 
     public bool UpdateDocument(Func<ConfigurationDocument, ConfigurationDocument> update)
     {
@@ -146,18 +158,7 @@ internal sealed class ConfigurationWorkspace : ObservableObject, IDisposable
 
     public void ActivateProfileSet(Guid profileSetId)
     {
-        UpdateDocument(current =>
-        {
-            ProfileSet active = current.ProfileSets.First(set => set.Id == profileSetId);
-            return current with
-            {
-                ProfileSets =
-                [
-                    active,
-                    .. current.ProfileSets.Where(set => set.Id != profileSetId),
-                ],
-            };
-        });
+        UpdateDocument(current => current with { ActiveProfileSetId = profileSetId });
         SelectProfileSet(profileSetId);
     }
 
@@ -248,6 +249,9 @@ internal sealed class ConfigurationWorkspace : ObservableObject, IDisposable
         UpdateDocument(current => current with
         {
             ProfileSets = current.ProfileSets.Where(set => set.Id != removedId).ToArray(),
+            ActiveProfileSetId = current.ActiveProfileSetId == removedId
+                ? replacement.Id
+                : current.ActiveProfileSetId,
         });
         SelectProfileSet(replacement.Id);
     }

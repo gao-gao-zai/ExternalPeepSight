@@ -1,10 +1,13 @@
-#include "ipc_protocol.h"
+﻿#include "ipc_protocol.h"
 
 #include <winrt/base.h>
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <future>
 #include <string>
+#include <thread>
 
 namespace
 {
@@ -181,7 +184,7 @@ TEST(IpcHostState, ValidatorRejectionDoesNotAdvanceVersionAndIdempotentReplaySki
 {
     int validation_count = 0;
     external_peepsight::IpcHostState state(
-        [&validation_count](const std::string_view snapshot)
+        [&validation_count](const std::uint64_t, const std::string_view snapshot)
         {
             ++validation_count;
             if (snapshot.find("\"reject\":true") != std::string_view::npos)
@@ -200,11 +203,63 @@ TEST(IpcHostState, ValidatorRejectionDoesNotAdvanceVersionAndIdempotentReplaySki
     EXPECT_EQ(2U, state.snapshot().configuration_version);
 }
 
+TEST(IpcHostState, HostPublicationAdvancesVersionRevisionAndEncodesNotification)
+{
+    initialize_winrt();
+    external_peepsight::IpcHostState state;
+    EXPECT_EQ(external_peepsight::IpcApplyResult::applied, state.apply(4U, R"({"profile":"before"})"));
+    const std::uint64_t observed_revision = state.host_snapshot_revision();
+
+    state.publish_host_snapshot(R"({"profile":"after"})");
+
+    const std::optional<external_peepsight::IpcHostStateChange> change =
+        state.wait_for_host_snapshot_after(observed_revision, {});
+    ASSERT_TRUE(change);
+    EXPECT_EQ(observed_revision + 1U, change->revision);
+    EXPECT_EQ(5U, change->state.configuration_version);
+    EXPECT_EQ(R"({"profile":"after"})", change->state.snapshot_json);
+
+    const std::string notification = external_peepsight::make_host_state_changed(change->state);
+    EXPECT_NE(std::string::npos, notification.find(R"("requestId":"00000000-0000-0000-0000-000000000000")"));
+    EXPECT_NE(std::string::npos, notification.find(R"("type":"HostStateChanged")"));
+    EXPECT_NE(std::string::npos, notification.find(R"("configurationVersion":5)"));
+    EXPECT_NE(std::string::npos, notification.find(R"("snapshot":{"profile":"after"})"));
+}
+
+TEST(IpcHostState, HostPublicationVersionSaturatesAtMaximumJsonInteger)
+{
+    external_peepsight::IpcHostState state;
+    constexpr std::uint64_t maximum_json_integer = 9'007'199'254'740'991ULL;
+    EXPECT_EQ(external_peepsight::IpcApplyResult::applied, state.apply(maximum_json_integer, "{}"));
+
+    state.publish_host_snapshot(R"({"updated":true})");
+
+    EXPECT_EQ(maximum_json_integer, state.snapshot().configuration_version);
+    EXPECT_EQ(1U, state.host_snapshot_revision());
+}
+
+TEST(IpcHostState, WaitingForHostPublicationCanBeCancelled)
+{
+    using namespace std::chrono_literals;
+
+    external_peepsight::IpcHostState state;
+    std::promise<bool> completed;
+    std::future<bool> result = completed.get_future();
+    std::jthread waiter(
+        [&state, &completed](const std::stop_token stop_token)
+        { completed.set_value(!state.wait_for_host_snapshot_after(state.host_snapshot_revision(), stop_token)); });
+
+    waiter.request_stop();
+
+    ASSERT_EQ(std::future_status::ready, result.wait_for(1s));
+    EXPECT_TRUE(result.get());
+}
+
 TEST(IpcSession, ReturnsStableClientErrorFromSnapshotValidator)
 {
     initialize_winrt();
     external_peepsight::IpcHostState state(
-        [](const std::string_view)
+        [](const std::uint64_t, const std::string_view)
         {
             throw external_peepsight::IpcClientError(L"InputRegistrationFailed",
                                                      L"The configured hotkey is already registered.");
@@ -256,5 +311,54 @@ TEST(IpcSession, RejectsShowToastWhenHandlerIsUnavailable)
                  R"({"id":"toast-2","deduplicationKey":"profile","text":"Profile","category":"profile"})"));
 
     EXPECT_NE(std::string::npos, result.response_json.find("\"code\":\"CommandNotAvailable\""));
+}
+
+TEST(IpcSession, ValidatesScriptAndReturnsDeclarationsWithoutChangingVersion)
+{
+    initialize_winrt();
+    external_peepsight::IpcHostState state(
+        {}, {},
+        [](const std::string_view payload)
+        {
+            EXPECT_NE(std::string_view::npos, payload.find("\"scope\":\"profile\""));
+            return R"({"bindings":[{"id":"toggle","displayName":"Toggle","pressed":true,"released":false,"defaultEnabled":true}],"settings":[]})";
+        });
+    external_peepsight::IpcSession session(state, std::string(kToken));
+    static_cast<void>(session.handle_message(
+        envelope("10000000-0000-0000-0000-000000000001", "Hello", "{\"token\":\"" + std::string(kToken) + "\"}")));
+
+    const auto result =
+        session.handle_message(envelope("10000000-0000-0000-0000-000000000002", "ValidateScript",
+                                        R"({"scope":"profile","source":"return eps.script {}","settings":[]} )"));
+
+    EXPECT_FALSE(result.disconnect);
+    EXPECT_NE(std::string::npos, result.response_json.find("\"command\":\"ValidateScript\""));
+    EXPECT_NE(std::string::npos, result.response_json.find("\"id\":\"toggle\""));
+    EXPECT_EQ(0U, state.snapshot().configuration_version);
+}
+
+TEST(IpcSession, RejectsScriptValidationWhenUnavailableOrInvalid)
+{
+    initialize_winrt();
+    external_peepsight::IpcHostState unavailable;
+    external_peepsight::IpcSession unavailable_session(unavailable, std::string(kToken));
+    static_cast<void>(unavailable_session.handle_message(
+        envelope("20000000-0000-0000-0000-000000000001", "Hello", "{\"token\":\"" + std::string(kToken) + "\"}")));
+    const auto unavailable_result = unavailable_session.handle_message(
+        envelope("20000000-0000-0000-0000-000000000002", "ValidateScript",
+                 R"({"scope":"global","source":"return eps.script {}","settings":[]} )"));
+
+    external_peepsight::IpcHostState invalid({}, {}, [](const std::string_view) -> std::string
+                                             { throw std::invalid_argument("Script syntax is invalid."); });
+    external_peepsight::IpcSession invalid_session(invalid, std::string(kToken));
+    static_cast<void>(invalid_session.handle_message(
+        envelope("30000000-0000-0000-0000-000000000001", "Hello", "{\"token\":\"" + std::string(kToken) + "\"}")));
+    const auto invalid_result =
+        invalid_session.handle_message(envelope("30000000-0000-0000-0000-000000000002", "ValidateScript",
+                                                R"({"scope":"global","source":"invalid","settings":[]} )"));
+
+    EXPECT_NE(std::string::npos, unavailable_result.response_json.find("\"code\":\"CommandNotAvailable\""));
+    EXPECT_NE(std::string::npos, invalid_result.response_json.find("\"code\":\"InvalidScript\""));
+    EXPECT_NE(std::string::npos, invalid_result.response_json.find("Script syntax is invalid."));
 }
 } // namespace

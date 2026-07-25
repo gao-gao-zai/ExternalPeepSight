@@ -6,47 +6,7 @@
     xmlns:vm="using:ExternalPeepSight.UI.ViewModels"
     x:DataType="vm:HotkeyEditorViewModel">
     <UserControl.Styles>
-        <Style Selector="controls|HotkeyCaptureBox">
-            <Setter Property="MinHeight" Value="38" />
-            <Setter Property="Padding" Value="10,7" />
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="VerticalContentAlignment" Value="Center" />
-            <Setter Property="Background" Value="{DynamicResource AppSubtleSurfaceBrush}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="4" />
-            <Setter Property="Foreground" Value="{DynamicResource AppSecondaryTextBrush}" />
-            <Setter Property="Template">
-                <ControlTemplate>
-                    <Border
-                        Background="{TemplateBinding Background}"
-                        BorderBrush="{TemplateBinding BorderBrush}"
-                        BorderThickness="{TemplateBinding BorderThickness}"
-                        CornerRadius="{TemplateBinding CornerRadius}"
-                        Padding="{TemplateBinding Padding}">
-                        <Grid ColumnDefinitions="24,*">
-                            <TextBlock
-                                VerticalAlignment="Center"
-                                FontFamily="Segoe Fluent Icons"
-                                FontSize="15"
-                                Text="&#xE765;" />
-                            <ContentPresenter
-                                Grid.Column="1"
-                                VerticalAlignment="Center"
-                                Content="{TemplateBinding Content}"
-                                Foreground="{TemplateBinding Foreground}" />
-                        </Grid>
-                    </Border>
-                </ControlTemplate>
-            </Setter>
-        </Style>
-        <Style Selector="controls|HotkeyCaptureBox:pointerover">
-            <Setter Property="Background" Value="{DynamicResource AppHoverBrush}" />
-        </Style>
-        <Style Selector="controls|HotkeyCaptureBox:focus">
-            <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}" />
-            <Setter Property="BorderThickness" Value="2" />
-        </Style>
+        <StyleInclude Source="avares://ExternalPeepSight.UI/Styles/HotkeyCaptureBoxStyles.axaml" />
     </UserControl.Styles>
     <StackPanel Spacing="14">
         <Grid ColumnDefinitions="*,6,*,6,*,6,*">
@@ -75,6 +35,7 @@
             <controls:HotkeyCaptureBox
                 Grid.Column="1"
                 Classes="hotkey-capture"
+                CapturingText="{DynamicResource Loc.Hotkey.Capturing}"
                 PlaceholderText="{DynamicResource Loc.Hotkey.Capture}"
                 Value="{Binding ToggleKey, Mode=TwoWay}" />
         </Grid>
@@ -84,6 +45,7 @@
                 <controls:HotkeyCaptureBox
                     Grid.Column="1"
                     Classes="hotkey-capture"
+                    CapturingText="{DynamicResource Loc.Hotkey.Capturing}"
                     PlaceholderText="{DynamicResource Loc.Hotkey.Capture}"
                     Value="{Binding EnableKey, Mode=TwoWay}" />
             </Grid>
@@ -92,6 +54,7 @@
                 <controls:HotkeyCaptureBox
                     Grid.Column="1"
                     Classes="hotkey-capture"
+                    CapturingText="{DynamicResource Loc.Hotkey.Capturing}"
                     PlaceholderText="{DynamicResource Loc.Hotkey.Capture}"
                     Value="{Binding DisableKey, Mode=TwoWay}" />
             </Grid>
@@ -101,6 +64,7 @@
             <controls:HotkeyCaptureBox
                 Grid.Column="1"
                 Classes="hotkey-capture"
+                CapturingText="{DynamicResource Loc.Hotkey.Capturing}"
                 PlaceholderText="{DynamicResource Loc.Hotkey.Capture}"
                 Value="{Binding HoldKey, Mode=TwoWay}" />
         </Grid>

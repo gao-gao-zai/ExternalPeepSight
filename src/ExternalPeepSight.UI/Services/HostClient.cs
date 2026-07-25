@@ -25,10 +25,17 @@ internal interface IHostSession
         CancellationToken cancellationToken = default);
 }
 
+internal interface IScriptValidationSession
+{
+    public Task<JsonElement> ValidateScriptAsync(
+        JsonElement payload,
+        CancellationToken cancellationToken = default);
+}
+
 /// <summary>
 /// Maintains the authenticated settings connection to the native Host.
 /// </summary>
-public sealed class HostClient : IAsyncDisposable, IHostSession
+public sealed class HostClient : IAsyncDisposable, IHostSession, IScriptValidationSession
 {
     private const int ProtocolVersion = 1;
     private const int MaximumMessageBytes = 1024 * 1024;
@@ -159,6 +166,11 @@ public sealed class HostClient : IAsyncDisposable, IHostSession
             new { id, deduplicationKey, text, category, priority, durationMs },
             cancellationToken).ConfigureAwait(false);
     }
+
+    public Task<JsonElement> ValidateScriptAsync(
+        JsonElement payload,
+        CancellationToken cancellationToken = default) =>
+        SendRequestAsync("ValidateScript", payload, cancellationToken);
 
     /// <inheritdoc />
     public async ValueTask DisposeAsync()

@@ -18,6 +18,7 @@
   <data name="Navigation.Monitors" xml:space="preserve"><value>Monitors</value></data>
   <data name="Navigation.Switches" xml:space="preserve"><value>Switches &amp; hotkeys</value></data>
   <data name="Navigation.Profiles" xml:space="preserve"><value>Profile sets</value></data>
+  <data name="Navigation.Scripts" xml:space="preserve"><value>Script manager</value></data>
   <data name="Navigation.Transfer" xml:space="preserve"><value>Import &amp; export</value></data>
   <data name="Navigation.Settings" xml:space="preserve"><value>Settings</value></data>
   <data name="Common.Mode" xml:space="preserve"><value>Overlay mode</value></data>
@@ -42,7 +43,7 @@
   <data name="Common.Position" xml:space="preserve"><value>Position</value></data>
   <data name="Crosshair.Preview" xml:space="preserve"><value>Live preview</value></data>
   <data name="Crosshair.TabOverlay" xml:space="preserve"><value>Crosshair &amp; image</value></data>
-  <data name="Crosshair.TabSwitches" xml:space="preserve"><value>Switches &amp; hotkeys</value></data>
+  <data name="Crosshair.TabDisplayControl" xml:space="preserve"><value>Display control</value></data>
   <data name="Crosshair.CenterPoint" xml:space="preserve"><value>Center point</value></data>
   <data name="Crosshair.CenterVisible" xml:space="preserve"><value>Show center point</value></data>
   <data name="Crosshair.CenterRadius" xml:space="preserve"><value>Center radius (px)</value></data>
@@ -66,6 +67,50 @@
   <data name="Image.Scale" xml:space="preserve"><value>Scale</value></data>
   <data name="Image.KeepAspect" xml:space="preserve"><value>Keep aspect ratio</value></data>
   <data name="Image.PreviewUnavailable" xml:space="preserve"><value>SVG preview is rendered by Host. Metadata is shown here.</value></data>
+  <data name="Script.ControlMode" xml:space="preserve"><value>Display control mode</value></data>
+  <data name="Script.Basic" xml:space="preserve"><value>Basic</value></data>
+  <data name="Script.Lua" xml:space="preserve"><value>Lua</value></data>
+  <data name="Script.Advanced" xml:space="preserve"><value>Advanced</value></data>
+  <data name="Script.ScopeProfile" xml:space="preserve"><value>Profile</value></data>
+  <data name="Script.ScopeProfileSet" xml:space="preserve"><value>Profile set</value></data>
+  <data name="Script.ScopeGlobal" xml:space="preserve"><value>Global</value></data>
+  <data name="Script.Source" xml:space="preserve"><value>Lua source</value></data>
+  <data name="Script.BindingsAndSettings" xml:space="preserve"><value>Bindings and settings</value></data>
+  <data name="Script.Capture" xml:space="preserve"><value>Click and press a key or mouse button</value></data>
+  <data name="Script.ValidateAndEnable" xml:space="preserve"><value>Validate and enable</value></data>
+  <data name="Script.SourceRequired" xml:space="preserve"><value>Lua source is required.</value></data>
+  <data name="Script.ValidationSucceeded" xml:space="preserve"><value>Script validated and enabled.</value></data>
+  <data name="Script.ValidationFailed" xml:space="preserve"><value>Script validation failed: {0}</value></data>
+  <data name="Script.ConfigurationRejected" xml:space="preserve"><value>The validated script configuration was rejected.</value></data>
+  <data name="Script.CurrentProfileAdvanced" xml:space="preserve"><value>Current profile advanced control</value></data>
+  <data name="Script.RuntimeConfigurationHint" xml:space="preserve"><value>Registered settings and input bindings take effect immediately.</value></data>
+  <data name="Script.OpenManager" xml:space="preserve"><value>Open script manager</value></data>
+  <data name="Script.NoProfileScript" xml:space="preserve"><value>No profile-level script is attached. Open script manager to create one or copy one from the library.</value></data>
+  <data name="Script.EnabledState" xml:space="preserve"><value>Enabled</value></data>
+  <data name="Script.DisabledState" xml:space="preserve"><value>Disabled</value></data>
+  <data name="Script.RegisteredSettings" xml:space="preserve"><value>Registered settings</value></data>
+  <data name="Script.RegisteredBindings" xml:space="preserve"><value>Registered input bindings</value></data>
+  <data name="Script.NoDeclarations" xml:space="preserve"><value>This script did not register any settings or input bindings.</value></data>
+  <data name="Script.NoProfileSet" xml:space="preserve"><value>No profile set selected</value></data>
+  <data name="Script.GlobalTarget" xml:space="preserve"><value>Application global</value></data>
+  <data name="Script.CurrentTarget" xml:space="preserve"><value>Current target</value></data>
+  <data name="Script.AttachedScript" xml:space="preserve"><value>Attached script</value></data>
+  <data name="Script.NoAttachedScript" xml:space="preserve"><value>No script attached</value></data>
+  <data name="Script.Library" xml:space="preserve"><value>Independent script library</value></data>
+  <data name="Script.LibraryEmpty" xml:space="preserve"><value>No scripts in this scope. Use the add button to create one.</value></data>
+  <data name="Script.NewScript" xml:space="preserve"><value>New script</value></data>
+  <data name="Script.SaveLibraryScript" xml:space="preserve"><value>Save library script</value></data>
+  <data name="Script.SaveToLibrary" xml:space="preserve"><value>Save to library</value></data>
+  <data name="Script.Disable" xml:space="preserve"><value>Disable</value></data>
+  <data name="Script.ValidateAndApply" xml:space="preserve"><value>Validate and apply</value></data>
+  <data name="Script.CopyToTarget" xml:space="preserve"><value>Copy to current target</value></data>
+  <data name="Script.LibraryCreated" xml:space="preserve"><value>Library script created.</value></data>
+  <data name="Script.LibrarySaved" xml:space="preserve"><value>Library script saved.</value></data>
+  <data name="Script.LibraryDeleted" xml:space="preserve"><value>Library script deleted.</value></data>
+  <data name="Script.AssignmentSavedToLibrary" xml:space="preserve"><value>The attached script was copied to the independent library.</value></data>
+  <data name="Script.CopiedToTarget" xml:space="preserve"><value>The library script was validated and copied to the current target.</value></data>
+  <data name="Script.AssignmentDisabled" xml:space="preserve"><value>The attached script was disabled.</value></data>
+  <data name="Script.LibrarySaveFailed" xml:space="preserve"><value>The script library could not be saved.</value></data>
   <data name="Image.Invalid" xml:space="preserve"><value>The selected image is not a supported PNG or static SVG.</value></data>
   <data name="Dialog.SelectImage" xml:space="preserve"><value>Select an image</value></data>
   <data name="Dialog.OpenPackage" xml:space="preserve"><value>Import an EPSX package</value></data>
@@ -97,6 +142,7 @@
   <data name="Hotkey.DisableKey" xml:space="preserve"><value>Disable key</value></data>
   <data name="Hotkey.HoldKey" xml:space="preserve"><value>Hold key</value></data>
   <data name="Hotkey.Capture" xml:space="preserve"><value>Click, then press a key or mouse button</value></data>
+  <data name="Hotkey.Capturing" xml:space="preserve"><value>Waiting for a key or mouse button...</value></data>
   <data name="Hotkey.Conflict" xml:space="preserve"><value>This shortcut conflicts with another active binding.</value></data>
   <data name="Hotkey.Unsupported" xml:space="preserve"><value>This physical key is not supported.</value></data>
   <data name="Profiles.Sets" xml:space="preserve"><value>Profile sets</value></data>

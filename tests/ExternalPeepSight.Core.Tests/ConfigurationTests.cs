@@ -1,4 +1,5 @@
 ﻿using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
 
@@ -19,9 +20,190 @@ public sealed class ConfigurationTests
         Assert.Equal(
             ConfigurationJson.Serialize(document),
             ConfigurationJson.Serialize(restored));
-        Assert.Contains("\"schemaVersion\":6", json);
+        Assert.Contains("\"schemaVersion\":8", json);
         Assert.Contains("\"orbitAngleOffsetDeg\":0", json);
         Assert.DoesNotContain("\"switches\":", json[..json.IndexOf("\"profiles\"", StringComparison.Ordinal)]);
+    }
+
+    [Fact]
+    public void LuaScriptsRoundTripWithTypedDeclarationsAndValues()
+    {
+        ConfigurationDocument seed = ConfigurationDefaults.Create();
+        const string source = "return eps.script {}";
+        ScriptConfiguration CreateScript(KeyIdentity key) =>
+            new(
+                true,
+                "1",
+                source,
+                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source))),
+                [
+                    new("toggle", "Toggle", true, false, true, key),
+                ],
+                [
+                    new("enabled", "Enabled", ScriptSettingType.Boolean, "false", [], null, null),
+                ]);
+
+        ScriptConfiguration profileScript = CreateScript(
+            new KeyIdentity(InputDeviceKind.Mouse, (ushort)InputMouseButton.X1, false, KeyModifiers.Ctrl));
+        ScriptConfiguration profileSetScript = CreateScript(
+            new KeyIdentity(InputDeviceKind.Mouse, (ushort)InputMouseButton.X2, false, KeyModifiers.Ctrl));
+        ScriptConfiguration globalScript = CreateScript(
+            new KeyIdentity(InputDeviceKind.Keyboard, 0x31, false, KeyModifiers.Ctrl));
+        Profile profile = seed.Profiles[0] with
+        {
+            ControlMode = DisplayControlMode.Lua,
+            Script = profileScript,
+        };
+        ProfileSet profileSet = seed.ProfileSets[0] with { Script = profileSetScript };
+        ConfigurationDocument document = seed with
+        {
+            Profiles = [profile],
+            ProfileSets = [profileSet],
+            GlobalScript = globalScript,
+        };
+
+        ConfigurationDocument restored = ConfigurationJson.Deserialize(ConfigurationJson.Serialize(document));
+
+        AssertScriptEqual(profileScript, restored.Profiles[0].Script);
+        AssertScriptEqual(profileSetScript, restored.ProfileSets[0].Script);
+        AssertScriptEqual(globalScript, restored.GlobalScript);
+    }
+
+    [Fact]
+    public void ScriptUiLayoutRoundTripsThroughSchemaEight()
+    {
+        ConfigurationDocument seed = ConfigurationDefaults.Create();
+        const string source = "return eps.script { api_version = \"2\" }";
+        ScriptConfiguration script = new(
+            true,
+            "2",
+            source,
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source))),
+            [],
+            [
+                new("enabled", "Enabled", ScriptSettingType.Boolean, "true", [], null, null),
+                new("opacity", "Opacity", ScriptSettingType.Double, "0.8", [], 0, 1),
+            ],
+            new ScriptUiLayout(
+            [
+                new ScriptUiSection(
+                    "general",
+                    "General",
+                    "Primary controls",
+                    true,
+                    false,
+                    2,
+                    [
+                        new ScriptUiItem(
+                            "enabled",
+                            ScriptUiControlType.Switch,
+                            string.Empty,
+                            string.Empty,
+                            null,
+                            null),
+                        new ScriptUiItem(
+                            "opacity",
+                            ScriptUiControlType.Slider,
+                            "Overlay opacity",
+                            "%",
+                            0.05,
+                            new ScriptUiVisibilityCondition("enabled", "true")),
+                    ]),
+            ]));
+        ConfigurationDocument document = seed with
+        {
+            Profiles =
+            [
+                seed.Profiles[0] with
+                {
+                    ControlMode = DisplayControlMode.Lua,
+                    Script = script,
+                },
+            ],
+        };
+
+        ConfigurationDocument restored = ConfigurationJson.Deserialize(ConfigurationJson.Serialize(document));
+
+        ScriptConfiguration restoredScript = Assert.IsType<ScriptConfiguration>(restored.Profiles[0].Script);
+        Assert.Equal("2", restoredScript.ApiVersion);
+        ScriptUiSection section = Assert.Single(Assert.IsType<ScriptUiLayout>(restoredScript.Ui).Sections);
+        Assert.Equal("general", section.Id);
+        Assert.Equal(2, section.Columns);
+        Assert.Equal(ScriptUiControlType.Switch, section.Items[0].Control);
+        Assert.Equal(0.05, section.Items[1].Step);
+        Assert.Equal("enabled", section.Items[1].VisibleWhen?.SettingId);
+    }
+
+    [Fact]
+    public void EpsxRoundTripPreservesProfileScriptsButOmitsGlobalScript()
+    {
+        ConfigurationDocument seed = ConfigurationDefaults.Create();
+        const string source = "return eps.script {}";
+        ScriptConfiguration CreateScript(KeyIdentity key) =>
+            new(
+                true,
+                "1",
+                source,
+                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source))),
+                [
+                    new("toggle", "Toggle", true, false, true, key),
+                ],
+                []);
+
+        ScriptConfiguration profileScript = CreateScript(
+            new KeyIdentity(InputDeviceKind.Mouse, (ushort)InputMouseButton.X1, false, KeyModifiers.None));
+        ScriptConfiguration profileSetScript = CreateScript(
+            new KeyIdentity(InputDeviceKind.Mouse, (ushort)InputMouseButton.X2, false, KeyModifiers.None));
+        ScriptConfiguration globalScript = CreateScript(
+            new KeyIdentity(InputDeviceKind.Keyboard, 0x31, false, KeyModifiers.None));
+        Profile profile = seed.Profiles[0] with
+        {
+            ControlMode = DisplayControlMode.Lua,
+            Script = profileScript,
+        };
+        ProfileSet profileSet = seed.ProfileSets[0] with { Script = profileSetScript };
+        ConfigurationDocument document = seed with
+        {
+            Profiles = [profile],
+            ProfileSets = [profileSet],
+            GlobalScript = globalScript,
+        };
+
+        using var stream = new MemoryStream();
+        EpsxArchive.Export(stream, document, []);
+        string profilesJson = ReadZipText(stream, "profiles.json");
+        JsonObject portable = JsonNode.Parse(profilesJson)!.AsObject();
+
+        Assert.False(portable.ContainsKey("globalScript"));
+
+        stream.Position = 0;
+        ConfigurationMergeResult result = EpsxArchive.Import(stream, ConfigurationDefaults.Create());
+
+        Assert.Contains(result.Document.Profiles, candidate => candidate.Script?.SourceHash == profileScript.SourceHash);
+        Assert.Contains(result.Document.ProfileSets, candidate => candidate.Script?.SourceHash == profileSetScript.SourceHash);
+    }
+
+    private static void AssertScriptEqual(ScriptConfiguration expected, ScriptConfiguration? actual)
+    {
+        Assert.NotNull(actual);
+        Assert.Equal(expected.Enabled, actual.Enabled);
+        Assert.Equal(expected.ApiVersion, actual.ApiVersion);
+        Assert.Equal(expected.Source, actual.Source);
+        Assert.Equal(expected.SourceHash, actual.SourceHash);
+        Assert.Equal(expected.Bindings, actual.Bindings);
+        Assert.Equal(expected.Settings.Length, actual.Settings.Length);
+        for (int index = 0; index < expected.Settings.Length; index++)
+        {
+            ScriptSetting expectedSetting = expected.Settings[index];
+            ScriptSetting actualSetting = actual.Settings[index];
+            Assert.Equal(expectedSetting.Id, actualSetting.Id);
+            Assert.Equal(expectedSetting.DisplayName, actualSetting.DisplayName);
+            Assert.Equal(expectedSetting.Type, actualSetting.Type);
+            Assert.Equal(expectedSetting.Value, actualSetting.Value);
+            Assert.Equal(expectedSetting.Options, actualSetting.Options);
+            Assert.Equal(expectedSetting.Minimum, actualSetting.Minimum);
+            Assert.Equal(expectedSetting.Maximum, actualSetting.Maximum);
+        }
     }
 
     [Fact]
@@ -39,6 +221,7 @@ public sealed class ConfigurationTests
         Profile first = document.Profiles[0];
         Profile second = first with { Id = Guid.NewGuid(), Name = "Second" };
         SwitchConfiguration switches = first.Switches with { InitialStateA = true };
+        Guid profileSetId = Guid.NewGuid();
         ConfigurationDocument versionTwo = document with
         {
             Profiles =
@@ -46,7 +229,8 @@ public sealed class ConfigurationTests
                 first with { Switches = switches },
                 second with { Switches = switches },
             ],
-            ProfileSets = [],
+            ProfileSets = [new(profileSetId, "Default", [first.Id, second.Id], first.Id)],
+            ActiveProfileSetId = profileSetId,
         };
         System.Text.Json.Nodes.JsonObject versionOne =
             System.Text.Json.Nodes.JsonNode.Parse(ConfigurationJson.Serialize(versionTwo))!.AsObject();
@@ -132,7 +316,7 @@ public sealed class ConfigurationTests
         }
 
         ConfigurationDocument restored = ConfigurationJson.Deserialize(versionThree.ToJsonString());
-        Assert.Equal(6, restored.SchemaVersion);
+        Assert.Equal(8, restored.SchemaVersion);
         Assert.All(
             restored.Profiles[0].Crosshair.Arms,
             arm =>
@@ -164,7 +348,7 @@ public sealed class ConfigurationTests
 
         ConfigurationDocument restored = ConfigurationJson.Deserialize(versionFour.ToJsonString());
 
-        Assert.Equal(6, restored.SchemaVersion);
+        Assert.Equal(8, restored.SchemaVersion);
         Assert.All(
             restored.Profiles[0].Crosshair.Arms,
             arm =>
@@ -238,7 +422,7 @@ public sealed class ConfigurationTests
     public void NewerSchemaVersionIsRejected()
     {
         string json = ConfigurationJson.Serialize(ConfigurationDefaults.Create())
-            .Replace("\"schemaVersion\":6", "\"schemaVersion\":99");
+            .Replace("\"schemaVersion\":8", "\"schemaVersion\":99");
 
         Assert.Throws<ConfigurationFormatException>(() => ConfigurationJson.Deserialize(json));
     }
@@ -485,10 +669,12 @@ public sealed class ConfigurationTests
             ActiveMode = OverlayMode.Image,
             Image = new ImageOverlay(profileId, AnchorMode.ScreenCenter, new PixelPoint(0, 0), 1, true),
         };
+        Guid profileSetId = Guid.NewGuid();
         var document = ConfigurationDefaults.Create() with
         {
             Profiles = [profile],
-            ProfileSets = [new(Guid.NewGuid(), "Images", [profileId], profileId)],
+            ProfileSets = [new(profileSetId, "Images", [profileId], profileId)],
+            ActiveProfileSetId = profileSetId,
             Assets = [reference],
         };
         return (document, new EpsxAsset(reference, content));

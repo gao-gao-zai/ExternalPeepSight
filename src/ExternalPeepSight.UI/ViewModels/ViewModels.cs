@@ -77,6 +77,7 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
 {
     private readonly ConfigurationWorkspace workspace;
     private readonly LocalizationService localization;
+    private readonly NavigationItemViewModel scriptsNavigation;
     private NavigationItemViewModel selectedNavigation;
 
     public MainWindowViewModel(
@@ -86,11 +87,17 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
         IMonitorEnumerationService monitorEnumeration,
         ThemeService themeService,
         UiPreferencesStore preferencesStore,
-        UiPreferences preferences)
+        UiPreferences preferences,
+        IScriptLibraryStore scriptLibraryStore)
     {
         this.workspace = workspace;
         this.localization = localization;
-        Crosshair = new CrosshairEditorViewModel(workspace, localization, fileDialogs);
+        Scripts = new ScriptManagerViewModel(workspace, localization, scriptLibraryStore);
+        Crosshair = new CrosshairEditorViewModel(
+            workspace,
+            localization,
+            fileDialogs,
+            OpenSelectedProfileScript);
         Image = Crosshair.Image;
         Monitors = new MonitorSelectionViewModel(workspace, localization, monitorEnumeration);
         Switches = Crosshair.Switches;
@@ -102,11 +109,13 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
             themeService,
             preferencesStore,
             preferences);
+        scriptsNavigation = new("Navigation.Scripts", "\uE943", Scripts, localization);
         Navigation =
         [
             new("Navigation.Crosshair", "\uE790", Crosshair, localization),
             new("Navigation.Monitors", "\uE7F4", Monitors, localization),
             new("Navigation.Profiles", "\uE8A5", Profiles, localization),
+            scriptsNavigation,
             new("Navigation.Transfer", "\uE8B5", Transfer, localization),
             new("Navigation.Settings", "\uE713", Settings, localization),
         ];
@@ -158,6 +167,8 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     public ProfileSetsViewModel Profiles { get; }
 
+    public ScriptManagerViewModel Scripts { get; }
+
     public ImportExportViewModel Transfer { get; }
 
     public SettingsViewModel Settings { get; }
@@ -170,6 +181,7 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
         workspace.PropertyChanged -= OnWorkspacePropertyChanged;
         localization.CultureChanged -= OnCultureChanged;
         Crosshair.Dispose();
+        Scripts.Dispose();
         workspace.Dispose();
     }
 
@@ -194,27 +206,36 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
     }
 
     private void OnCultureChanged(object? sender, EventArgs e) => OnPropertyChanged(nameof(HostStatus));
+
+    private void OpenSelectedProfileScript()
+    {
+        Scripts.OpenProfileAssignment();
+        SelectedNavigation = scriptsNavigation;
+    }
 }
 
 internal enum CrosshairEditorTab
 {
     Overlay,
-    Switches,
+    DisplayControl,
 }
 
 internal sealed class CrosshairEditorViewModel : WorkspaceViewModel, IDisposable
 {
     private int selectedArmIndex;
     private CrosshairEditorTab selectedTab;
+    private bool advancedEditorSelected;
 
     public CrosshairEditorViewModel(
         ConfigurationWorkspace workspace,
         LocalizationService localization,
-        IFileDialogService fileDialogs)
+        IFileDialogService fileDialogs,
+        Action openScriptManager)
         : base(workspace)
     {
         Image = new ImageEditorViewModel(workspace, localization, fileDialogs);
         Switches = new SwitchesViewModel(workspace, localization);
+        Script = new ScriptAdvancedSummaryViewModel(workspace, openScriptManager);
         Modes =
         [
             new(OverlayMode.Crosshair, "Common.Crosshair", localization),
@@ -244,6 +265,8 @@ internal sealed class CrosshairEditorViewModel : WorkspaceViewModel, IDisposable
 
     public SwitchesViewModel Switches { get; }
 
+    public ScriptAdvancedSummaryViewModel Script { get; }
+
     public CrosshairEditorTab SelectedTab
     {
         get => selectedTab;
@@ -253,6 +276,7 @@ internal sealed class CrosshairEditorViewModel : WorkspaceViewModel, IDisposable
             {
                 OnPropertyChanged(nameof(SelectedTabIndex));
                 OnPropertyChanged(nameof(IsOverlayTab));
+                OnPropertyChanged(nameof(IsDisplayControlTab));
                 OnPropertyChanged(nameof(IsSwitchesTab));
             }
         }
@@ -282,14 +306,57 @@ internal sealed class CrosshairEditorViewModel : WorkspaceViewModel, IDisposable
         }
     }
 
-    public bool IsSwitchesTab
+    public bool IsDisplayControlTab
     {
-        get => SelectedTab == CrosshairEditorTab.Switches;
+        get => SelectedTab == CrosshairEditorTab.DisplayControl;
         set
         {
             if (value)
             {
-                SelectedTab = CrosshairEditorTab.Switches;
+                SelectedTab = CrosshairEditorTab.DisplayControl;
+            }
+        }
+    }
+
+    public bool IsSwitchesTab
+    {
+        get => IsDisplayControlTab;
+        set => IsDisplayControlTab = value;
+    }
+
+    public bool IsBasicControlMode
+    {
+        get => !IsAdvancedControlMode;
+        set
+        {
+            if (!value)
+            {
+                return;
+            }
+
+            advancedEditorSelected = false;
+            if (Profile.ControlMode == DisplayControlMode.Lua)
+            {
+                Workspace.UpdateSelectedProfile(profile => profile with
+                {
+                    ControlMode = DisplayControlMode.Basic,
+                });
+            }
+            OnPropertyChanged(nameof(IsBasicControlMode));
+            OnPropertyChanged(nameof(IsAdvancedControlMode));
+        }
+    }
+
+    public bool IsAdvancedControlMode
+    {
+        get => advancedEditorSelected || Profile.ControlMode == DisplayControlMode.Lua;
+        set
+        {
+            if (value)
+            {
+                advancedEditorSelected = true;
+                OnPropertyChanged(nameof(IsBasicControlMode));
+                OnPropertyChanged(nameof(IsAdvancedControlMode));
             }
         }
     }
@@ -531,7 +598,10 @@ internal sealed class CrosshairEditorViewModel : WorkspaceViewModel, IDisposable
 
     public Crosshair Preview => Profile.Crosshair;
 
-    public void Dispose() => Image.Dispose();
+    public void Dispose()
+    {
+        Image.Dispose();
+    }
 
     protected override void Refresh()
     {
@@ -551,7 +621,11 @@ internal sealed class CrosshairEditorViewModel : WorkspaceViewModel, IDisposable
         OnPropertyChanged(nameof(Linked));
         OnPropertyChanged(nameof(Preview));
         OnPropertyChanged(nameof(IsOverlayTab));
+        OnPropertyChanged(nameof(IsDisplayControlTab));
         OnPropertyChanged(nameof(IsSwitchesTab));
+        advancedEditorSelected = Profile.ControlMode == DisplayControlMode.Lua;
+        OnPropertyChanged(nameof(IsBasicControlMode));
+        OnPropertyChanged(nameof(IsAdvancedControlMode));
         RefreshArm();
     }
 

@@ -1,4 +1,4 @@
-#include "prototype_app.h"
+﻿#include "prototype_app.h"
 
 #include "diagnostics.h"
 #include "host_snapshot.h"
@@ -13,6 +13,8 @@
 #include "render_configuration.h"
 #include "render_recovery.h"
 #include "render_state.h"
+#include "script_command_configuration.h"
+#include "script_coordinator.h"
 #include "single_instance.h"
 #include "tray_icon.h"
 
@@ -65,6 +67,7 @@ constexpr UINT kTrayMessage = WM_APP + 3U;
 constexpr UINT kInputStateChangedMessage = WM_APP + 4U;
 constexpr UINT kApplySnapshotMessage = WM_APP + 5U;
 constexpr UINT kShowToastMessage = WM_APP + 6U;
+constexpr UINT kScriptRuntimeUpdatedMessage = WM_APP + 7U;
 constexpr UINT_PTR kMetricsTimerId = 1U;
 constexpr UINT_PTR kShutdownTimerId = 2U;
 constexpr UINT_PTR kToastTimerId = 3U;
@@ -1230,8 +1233,11 @@ class MetricsRecorder
 
 struct ApplySnapshotRequest
 {
+    std::uint64_t configuration_version = 0U;
+    std::string snapshot_json;
     InputConfiguration input;
     std::shared_ptr<const RenderConfiguration> render;
+    std::optional<ScriptPreparedConfiguration> script;
     std::exception_ptr failure;
 };
 
@@ -1282,6 +1288,20 @@ class OverlayApplication
   public:
     OverlayApplication(_In_ HINSTANCE instance, PrototypeOptions options, const IpcEndpoint &ipc_endpoint)
         : instance_(instance), options_(std::move(options)),
+          script_coordinator_(
+              [this](ScriptRuntimeUpdate update)
+              {
+                  const HWND target = configuration_target_.load(std::memory_order_acquire);
+                  if (target == nullptr)
+                  {
+                      return;
+                  }
+                  auto *message = new ScriptRuntimeUpdate(std::move(update));
+                  if (!PostMessageW(target, kScriptRuntimeUpdatedMessage, 0U, reinterpret_cast<LPARAM>(message)))
+                  {
+                      delete message;
+                  }
+              }),
           input_service_(
               [this](const InputStateSnapshot state)
               {
@@ -1292,35 +1312,56 @@ class OverlayApplication
                                                   (state.visible ? 1U << 2U : 0U) | (state.configured ? 1U << 3U : 0U);
                       PostMessageW(target, kInputStateChangedMessage, packed_state, 0);
                   }
-              }),
+              },
+              [this](ScriptInputEvent event) { script_coordinator_.dispatch_input(std::move(event)); }),
           ipc_host_state_(
-              [this](const std::string_view snapshot_json)
+              [this](const std::uint64_t configuration_version, const std::string_view snapshot_json)
               {
                   ApplySnapshotRequest request;
+                  request.configuration_version = configuration_version;
+                  request.snapshot_json = snapshot_json;
                   try
                   {
+                      request.script = script_coordinator_.prepare(snapshot_json);
                       request.input = parse_input_configuration(snapshot_json);
+                      request.input.script_bindings = request.script->input_bindings;
                       request.render = std::make_shared<const RenderConfiguration>(
                           parse_render_configuration(snapshot_json, options_.asset_root));
                   }
                   catch (const std::exception &error)
                   {
+                      if (request.script)
+                      {
+                          script_coordinator_.discard(request.script->token);
+                      }
                       throw IpcClientError(L"InvalidConfiguration", winrt::to_hstring(error.what()).c_str());
                   }
 
                   const HWND target = configuration_target_.load(std::memory_order_acquire);
                   if (target == nullptr)
                   {
+                      if (request.script)
+                      {
+                          script_coordinator_.discard(request.script->token);
+                      }
                       throw IpcClientError(L"HostNotReady", L"The Host window is not ready to apply configuration.");
                   }
                   DWORD_PTR ignored = 0U;
                   if (!SendMessageTimeoutW(target, kApplySnapshotMessage, 0U, reinterpret_cast<LPARAM>(&request),
                                            SMTO_ABORTIFHUNG | SMTO_BLOCK, 10'000U, &ignored))
                   {
+                      if (request.script)
+                      {
+                          script_coordinator_.discard(request.script->token);
+                      }
                       throw IpcClientError(L"ApplyTimeout", L"The Host did not apply configuration before timeout.");
                   }
                   if (request.failure)
                   {
+                      if (request.script)
+                      {
+                          script_coordinator_.discard(request.script->token);
+                      }
                       try
                       {
                           std::rethrow_exception(request.failure);
@@ -1333,6 +1374,10 @@ class OverlayApplication
                       {
                           throw IpcClientError(L"RenderConfigurationFailed", winrt::to_hstring(error.what()).c_str());
                       }
+                  }
+                  if (request.script)
+                  {
+                      script_coordinator_.discard(request.script->token);
                   }
               },
               [this](const std::string_view payload_json)
@@ -1369,7 +1414,8 @@ class OverlayApplication
                           throw IpcClientError(L"ToastRenderFailed", winrt::to_hstring(error.what()).c_str());
                       }
                   }
-              }),
+              },
+              [this](const std::string_view payload_json) { return script_coordinator_.validate(payload_json); }),
           ipc_server_(ipc_endpoint, ipc_host_state_),
           ipc_thread_(HostThreadRole::ipc, [this](const std::stop_token stop_token) { ipc_server_.run(stop_token); }),
           renderer_(snapshots_)
@@ -1465,6 +1511,7 @@ class OverlayApplication
         {
             tray_icon_.initialize(controller_, kTrayMessage);
         }
+        script_coordinator_.start();
         input_service_.start();
         ipc_thread_.start();
         renderer_.start();
@@ -1601,9 +1648,10 @@ class OverlayApplication
         {
             const bool monitor_selected =
                 options_.display_mode == DisplayMode::all_monitors || overlay->monitor_handle() == selected_monitor;
+            const bool content_visible =
+                script_visibility_ && (profile_uses_lua_ || (switch_visibility_configured_ && switch_visibility_));
             const bool visible =
-                evaluate_overlay_visibility(monitor_selected, overlay->content_kind() == RenderContentKind::toast,
-                                            switch_visibility_configured_, switch_visibility_);
+                monitor_selected && (overlay->content_kind() == RenderContentKind::toast || content_visible);
             overlay->set_visible(visible);
         }
     }
@@ -1628,6 +1676,10 @@ class OverlayApplication
         const InputApplyResult input_result = input_service_.apply_configuration(request.input);
         if (!input_result.applied)
         {
+            if (request.script)
+            {
+                script_coordinator_.discard(request.script->token);
+            }
             throw IpcClientError(L"InputRegistrationFailed", winrt::to_hstring(input_result.message).c_str());
         }
 
@@ -1638,6 +1690,15 @@ class OverlayApplication
         try
         {
             rebuild_overlays();
+            if (request.script)
+            {
+                script_coordinator_.commit(request.script->token);
+                script_visibility_ = request.script->allows_visible;
+                profile_uses_lua_ = request.script->profile_uses_lua;
+                request.script.reset();
+                update_overlay_visibility();
+            }
+            current_snapshot_json_ = request.snapshot_json;
         }
         catch (...)
         {
@@ -1652,7 +1713,43 @@ class OverlayApplication
                                    NativeErrorStatus{NativeErrorDomain::win32, rollback.win32_error});
                 }
             }
+            if (request.script)
+            {
+                script_coordinator_.discard(request.script->token);
+            }
             throw;
+        }
+    }
+
+    void apply_script_commands(const std::vector<ScriptCommand> &commands)
+    {
+        window_thread_.assert_current("OverlayApplication::apply_script_commands");
+        if (commands.empty() || current_snapshot_json_.empty())
+        {
+            return;
+        }
+
+        const std::string candidate_json = external_peepsight::apply_script_commands(current_snapshot_json_, commands);
+        ApplySnapshotRequest request;
+        request.configuration_version = next_snapshot_version_;
+        request.snapshot_json = candidate_json;
+        try
+        {
+            request.script = script_coordinator_.prepare(candidate_json);
+            request.input = parse_input_configuration(candidate_json);
+            request.input.script_bindings = request.script->input_bindings;
+            request.render = std::make_shared<const RenderConfiguration>(
+                parse_render_configuration(candidate_json, options_.asset_root));
+            apply_snapshot(request);
+            ipc_host_state_.publish_host_snapshot(candidate_json);
+        }
+        catch (const std::exception &error)
+        {
+            if (request.script)
+            {
+                script_coordinator_.discard(request.script->token);
+            }
+            log_diagnostic(DiagnosticLevel::warning, "script.command_rejected", error.what());
         }
     }
 
@@ -1746,6 +1843,33 @@ class OverlayApplication
             switch_visibility_configured_ = (word_parameter & (1U << 3U)) != 0U;
             update_overlay_visibility();
             return 0;
+        case kScriptRuntimeUpdatedMessage:
+        {
+            auto *update = reinterpret_cast<ScriptRuntimeUpdate *>(long_parameter);
+            if (update == nullptr)
+            {
+                return 0;
+            }
+            script_visibility_ = update->allows_visible;
+            if (!update->succeeded)
+            {
+                log_diagnostic(DiagnosticLevel::warning, "script.callback_failed", update->error);
+            }
+            if (!update->commands.empty())
+            {
+                try
+                {
+                    apply_script_commands(update->commands);
+                }
+                catch (const std::exception &error)
+                {
+                    log_diagnostic(DiagnosticLevel::warning, "script.command_rejected", error.what());
+                }
+            }
+            delete update;
+            update_overlay_visibility();
+            return 0;
+        }
         case kTrayMessage:
         {
             const UINT event = LOWORD(long_parameter);
@@ -1870,6 +1994,7 @@ class OverlayApplication
         ipc_thread_.request_stop();
         ipc_thread_.join();
         input_service_.stop();
+        script_coordinator_.stop();
 
         if (controller_ != nullptr)
         {
@@ -1923,6 +2048,7 @@ class OverlayApplication
     AtomicHostSnapshot snapshots_;
     std::atomic<HWND> input_notification_target_ = nullptr;
     std::atomic<HWND> configuration_target_ = nullptr;
+    ScriptCoordinator script_coordinator_;
     GlobalInputService input_service_;
     IpcHostState ipc_host_state_;
     NamedPipeServer ipc_server_;
@@ -1943,6 +2069,9 @@ class OverlayApplication
     bool hotkey_registered_ = false;
     bool switch_visibility_configured_ = false;
     bool switch_visibility_ = true;
+    bool profile_uses_lua_ = false;
+    bool script_visibility_ = true;
+    std::string current_snapshot_json_;
 };
 } // namespace
 

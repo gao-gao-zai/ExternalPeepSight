@@ -18,6 +18,7 @@
   <data name="Navigation.Monitors" xml:space="preserve"><value>显示器选择</value></data>
   <data name="Navigation.Switches" xml:space="preserve"><value>逻辑开关与快捷键</value></data>
   <data name="Navigation.Profiles" xml:space="preserve"><value>配置集管理</value></data>
+  <data name="Navigation.Scripts" xml:space="preserve"><value>脚本管理</value></data>
   <data name="Navigation.Transfer" xml:space="preserve"><value>导入与导出</value></data>
   <data name="Navigation.Settings" xml:space="preserve"><value>应用设置</value></data>
   <data name="Common.Mode" xml:space="preserve"><value>覆盖模式</value></data>
@@ -42,7 +43,7 @@
   <data name="Common.Position" xml:space="preserve"><value>位置</value></data>
   <data name="Crosshair.Preview" xml:space="preserve"><value>实时预览</value></data>
   <data name="Crosshair.TabOverlay" xml:space="preserve"><value>准星与图像</value></data>
-  <data name="Crosshair.TabSwitches" xml:space="preserve"><value>逻辑开关与快捷键</value></data>
+  <data name="Crosshair.TabDisplayControl" xml:space="preserve"><value>显示控制</value></data>
   <data name="Crosshair.CenterPoint" xml:space="preserve"><value>中心点</value></data>
   <data name="Crosshair.CenterVisible" xml:space="preserve"><value>显示中心点</value></data>
   <data name="Crosshair.CenterRadius" xml:space="preserve"><value>中心点半径（px）</value></data>
@@ -66,6 +67,50 @@
   <data name="Image.Scale" xml:space="preserve"><value>缩放比例</value></data>
   <data name="Image.KeepAspect" xml:space="preserve"><value>保持纵横比</value></data>
   <data name="Image.PreviewUnavailable" xml:space="preserve"><value>SVG 由 Host 渲染，此处显示资源信息。</value></data>
+  <data name="Script.ControlMode" xml:space="preserve"><value>显示控制模式</value></data>
+  <data name="Script.Basic" xml:space="preserve"><value>基础</value></data>
+  <data name="Script.Lua" xml:space="preserve"><value>Lua</value></data>
+  <data name="Script.Advanced" xml:space="preserve"><value>高级</value></data>
+  <data name="Script.ScopeProfile" xml:space="preserve"><value>配置级</value></data>
+  <data name="Script.ScopeProfileSet" xml:space="preserve"><value>配置集级</value></data>
+  <data name="Script.ScopeGlobal" xml:space="preserve"><value>全局级</value></data>
+  <data name="Script.Source" xml:space="preserve"><value>Lua 源码</value></data>
+  <data name="Script.BindingsAndSettings" xml:space="preserve"><value>按键绑定与设置</value></data>
+  <data name="Script.Capture" xml:space="preserve"><value>点击后按下键盘或鼠标按键</value></data>
+  <data name="Script.ValidateAndEnable" xml:space="preserve"><value>验证并启用</value></data>
+  <data name="Script.SourceRequired" xml:space="preserve"><value>请输入 Lua 源码。</value></data>
+  <data name="Script.ValidationSucceeded" xml:space="preserve"><value>脚本验证成功，已启用。</value></data>
+  <data name="Script.ValidationFailed" xml:space="preserve"><value>脚本验证失败：{0}</value></data>
+  <data name="Script.ConfigurationRejected" xml:space="preserve"><value>验证后的脚本配置未被接受。</value></data>
+  <data name="Script.CurrentProfileAdvanced" xml:space="preserve"><value>当前配置的高级控制</value></data>
+  <data name="Script.RuntimeConfigurationHint" xml:space="preserve"><value>脚本注册的配置与按键绑定会立即生效。</value></data>
+  <data name="Script.OpenManager" xml:space="preserve"><value>进入脚本管理</value></data>
+  <data name="Script.NoProfileScript" xml:space="preserve"><value>当前配置尚未挂载配置级脚本。可进入脚本管理新建脚本，或从独立脚本库复制。</value></data>
+  <data name="Script.EnabledState" xml:space="preserve"><value>已启用</value></data>
+  <data name="Script.DisabledState" xml:space="preserve"><value>已停用</value></data>
+  <data name="Script.RegisteredSettings" xml:space="preserve"><value>脚本注册的配置</value></data>
+  <data name="Script.RegisteredBindings" xml:space="preserve"><value>脚本注册的按键绑定</value></data>
+  <data name="Script.NoDeclarations" xml:space="preserve"><value>此脚本没有注册配置或按键绑定。</value></data>
+  <data name="Script.NoProfileSet" xml:space="preserve"><value>未选择配置集</value></data>
+  <data name="Script.GlobalTarget" xml:space="preserve"><value>应用全局</value></data>
+  <data name="Script.CurrentTarget" xml:space="preserve"><value>当前目标</value></data>
+  <data name="Script.AttachedScript" xml:space="preserve"><value>已挂载脚本</value></data>
+  <data name="Script.NoAttachedScript" xml:space="preserve"><value>尚未挂载脚本</value></data>
+  <data name="Script.Library" xml:space="preserve"><value>独立脚本库</value></data>
+  <data name="Script.LibraryEmpty" xml:space="preserve"><value>此作用域还没有脚本，点击加号新建。</value></data>
+  <data name="Script.NewScript" xml:space="preserve"><value>新建脚本</value></data>
+  <data name="Script.SaveLibraryScript" xml:space="preserve"><value>保存脚本库中的脚本</value></data>
+  <data name="Script.SaveToLibrary" xml:space="preserve"><value>保存到脚本库</value></data>
+  <data name="Script.Disable" xml:space="preserve"><value>停用</value></data>
+  <data name="Script.ValidateAndApply" xml:space="preserve"><value>验证并应用</value></data>
+  <data name="Script.CopyToTarget" xml:space="preserve"><value>复制到当前目标</value></data>
+  <data name="Script.LibraryCreated" xml:space="preserve"><value>已新建脚本库脚本。</value></data>
+  <data name="Script.LibrarySaved" xml:space="preserve"><value>脚本库脚本已保存。</value></data>
+  <data name="Script.LibraryDeleted" xml:space="preserve"><value>脚本库脚本已删除。</value></data>
+  <data name="Script.AssignmentSavedToLibrary" xml:space="preserve"><value>已将当前挂载脚本复制到独立脚本库。</value></data>
+  <data name="Script.CopiedToTarget" xml:space="preserve"><value>脚本验证成功，已复制到当前目标。</value></data>
+  <data name="Script.AssignmentDisabled" xml:space="preserve"><value>当前挂载脚本已停用。</value></data>
+  <data name="Script.LibrarySaveFailed" xml:space="preserve"><value>脚本库保存失败。</value></data>
   <data name="Image.Invalid" xml:space="preserve"><value>所选文件不是受支持的 PNG 或静态 SVG。</value></data>
   <data name="Dialog.SelectImage" xml:space="preserve"><value>选择图像</value></data>
   <data name="Dialog.OpenPackage" xml:space="preserve"><value>导入 EPSX 包</value></data>
@@ -97,6 +142,7 @@
   <data name="Hotkey.DisableKey" xml:space="preserve"><value>关闭按键</value></data>
   <data name="Hotkey.HoldKey" xml:space="preserve"><value>按住按键</value></data>
   <data name="Hotkey.Capture" xml:space="preserve"><value>单击后按下按键或鼠标键</value></data>
+  <data name="Hotkey.Capturing" xml:space="preserve"><value>正在等待按键或鼠标键...</value></data>
   <data name="Hotkey.Conflict" xml:space="preserve"><value>该快捷键与其他有效绑定冲突。</value></data>
   <data name="Hotkey.Unsupported" xml:space="preserve"><value>不支持该物理按键。</value></data>
   <data name="Profiles.Sets" xml:space="preserve"><value>配置集</value></data>

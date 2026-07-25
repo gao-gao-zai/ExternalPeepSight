@@ -29,7 +29,7 @@ public sealed class UiWorkflowTests
 
         window.Show();
 
-        Assert.Equal(5, context.ViewModel.Navigation.Count);
+        Assert.Equal(6, context.ViewModel.Navigation.Count);
         foreach (NavigationItemViewModel item in context.ViewModel.Navigation)
         {
             context.ViewModel.SelectedNavigation = item;
@@ -103,6 +103,232 @@ public sealed class UiWorkflowTests
         Assert.True(editor.IsSwitchesTab);
         Assert.False(editor.IsOverlayTab);
         Assert.Same(editor.Switches, context.ViewModel.Switches);
+    }
+
+    [Fact]
+    public async Task AdvancedScriptValidationPersistsDeclarationsAndEnablesProfileControl()
+    {
+        using TestContext context = CreateContext();
+        ScriptManagerViewModel manager = context.ViewModel.Scripts;
+
+        manager.OpenProfileAssignment();
+        manager.Source = "return eps.script {}";
+        await manager.ValidateAndApplyCommand.ExecuteAsync(null);
+
+        Assert.Equal(DisplayControlMode.Lua, context.Workspace.SelectedProfile.ControlMode);
+        Assert.True(context.Workspace.SelectedProfile.Script?.Enabled);
+        Assert.Single(context.ViewModel.Crosshair.Script.Bindings);
+        Assert.Equal("toggle", context.ViewModel.Crosshair.Script.Bindings[0].Id);
+        Assert.Equal(
+            new KeyIdentity(InputDeviceKind.Keyboard, 0x31, false, KeyModifiers.Ctrl),
+            context.ViewModel.Crosshair.Script.Bindings[0].Key);
+    }
+
+    [Fact]
+    public async Task ScriptDefaultBindingDoesNotReplaceAUserClearedValue()
+    {
+        using TestContext context = CreateContext();
+        ScriptManagerViewModel manager = context.ViewModel.Scripts;
+
+        manager.OpenProfileAssignment();
+        manager.Source = "return eps.script {}";
+        await manager.ValidateAndApplyCommand.ExecuteAsync(null);
+        context.ViewModel.Crosshair.Script.Bindings[0].Key = null;
+        await manager.ValidateAndApplyCommand.ExecuteAsync(null);
+
+        Assert.Null(context.Workspace.SelectedProfile.Script?.Bindings[0].Key);
+    }
+
+    [Fact]
+    public void AdvancedSummaryBuildsTrustedUiAndUpdatesConditionalVisibility()
+    {
+        using TestContext context = CreateContext();
+        ScriptConfiguration script = new(
+            true,
+            "2",
+            "return eps.script { api_version = \"2\" }",
+            new string('A', 64),
+            [],
+            [
+                new("enabled", "Enabled", ScriptSettingType.Boolean, "false", [], null, null),
+                new("opacity", "Opacity", ScriptSettingType.Double, "0.5", [], 0, 1),
+            ],
+            new ScriptUiLayout(
+            [
+                new ScriptUiSection(
+                    "general",
+                    "General",
+                    "Primary controls",
+                    false,
+                    true,
+                    2,
+                    [
+                        new ScriptUiItem(
+                            "enabled",
+                            ScriptUiControlType.Switch,
+                            string.Empty,
+                            string.Empty,
+                            null,
+                            null),
+                        new ScriptUiItem(
+                            "opacity",
+                            ScriptUiControlType.Slider,
+                            "Opacity",
+                            "%",
+                            0.05,
+                            new ScriptUiVisibilityCondition("enabled", "true")),
+                    ]),
+            ]));
+        context.Workspace.UpdateSelectedProfile(profile => profile with
+        {
+            ControlMode = DisplayControlMode.Lua,
+            Script = script,
+        });
+
+        ScriptAdvancedSummaryViewModel summary = context.ViewModel.Crosshair.Script;
+
+        Assert.True(summary.HasCustomUi);
+        ScriptUiSectionEditorViewModel section = Assert.Single(summary.Sections);
+        Assert.Single(section.Rows);
+        Assert.False(summary.Settings.Single(setting => setting.Id == "opacity").IsVisible);
+
+        summary.Settings.Single(setting => setting.Id == "enabled").BooleanValue = true;
+
+        Assert.True(summary.Settings.Single(setting => setting.Id == "opacity").IsVisible);
+        Assert.Single(section.Rows);
+        Assert.True(section.Rows[0].HasSecond);
+        Assert.Equal("true", context.Workspace.SelectedProfile.Script?.Settings[0].Value);
+    }
+
+    [AvaloniaFact(
+        "ExternalPeepSight.UI.Tests.AvaloniaTestSetup.BuildAvaloniaApp",
+        30_000)]
+    public void ScriptEditorRendersTrustedUiControls()
+    {
+        using TestContext context = CreateContext();
+        context.Workspace.UpdateSelectedProfile(profile => profile with
+        {
+            ControlMode = DisplayControlMode.Lua,
+            Script = new ScriptConfiguration(
+                true,
+                "2",
+                "return eps.script { api_version = \"2\" }",
+                new string('A', 64),
+                [],
+                [
+                    new("enabled", "Enabled", ScriptSettingType.Boolean, "true", [], null, null),
+                    new("opacity", "Opacity", ScriptSettingType.Double, "0.5", [], 0, 1),
+                ],
+                new ScriptUiLayout(
+                [
+                    new ScriptUiSection(
+                        "general",
+                        "General",
+                        string.Empty,
+                        true,
+                        true,
+                        1,
+                        [
+                            new ScriptUiItem(
+                                "enabled",
+                                ScriptUiControlType.Switch,
+                                string.Empty,
+                                string.Empty,
+                                null,
+                                null),
+                            new ScriptUiItem(
+                                "opacity",
+                                ScriptUiControlType.Slider,
+                                string.Empty,
+                                "%",
+                                0.05,
+                                null),
+                        ]),
+                ])),
+        });
+        var view = new ScriptEditorView
+        {
+            DataContext = context.ViewModel.Crosshair.Script,
+            Width = 420,
+            Height = 600,
+        };
+        var window = new Window
+        {
+            Content = view,
+            Width = 420,
+            Height = 600,
+        };
+
+        window.Show();
+        window.Measure(new Size(420, 600));
+        window.Arrange(new Rect(0, 0, 420, 600));
+
+        Assert.True(context.ViewModel.Crosshair.Script.HasCustomUi);
+        Assert.Single(context.ViewModel.Crosshair.Script.Sections);
+        Assert.Equal(
+            ScriptUiControlType.Switch,
+            context.ViewModel.Crosshair.Script.Settings[0].Control);
+        Assert.Equal(
+            ScriptUiControlType.Slider,
+            context.ViewModel.Crosshair.Script.Settings[1].Control);
+        window.Close();
+    }
+
+    [Fact]
+    public async Task LibraryScriptPersistsOutsideConfigurationAndCopiesToCurrentProfile()
+    {
+        using TestContext context = CreateContext();
+        ScriptManagerViewModel manager = context.ViewModel.Scripts;
+
+        Assert.False(manager.HasLibraryScripts);
+        manager.NewScriptCommand.Execute(null);
+        Assert.True(manager.HasLibraryScripts);
+        manager.Name = "Reusable profile script";
+        manager.Source = "return eps.script {}";
+        manager.SaveScriptCommand.Execute(null);
+        await manager.CopyToTargetCommand.ExecuteAsync(null);
+
+        Assert.Equal("return eps.script {}", context.Workspace.SelectedProfile.Script?.Source);
+        var store = new ScriptLibraryStore(Path.Combine(context.Root, "scripts.json"));
+        ScriptLibraryEntry saved = Assert.Single(store.Load());
+        Assert.Equal("Reusable profile script", saved.Name);
+        Assert.Equal(ScriptScope.Profile, saved.Scope);
+    }
+
+    [Fact]
+    public async Task ScriptManagerAppliesProfileSetAndGlobalScopes()
+    {
+        using TestContext context = CreateContext();
+        ScriptManagerViewModel manager = context.ViewModel.Scripts;
+
+        manager.IsProfileSetScope = true;
+        manager.Source = "return eps.script {}";
+        await manager.ValidateAndApplyCommand.ExecuteAsync(null);
+
+        manager.IsGlobalScope = true;
+        manager.Source = "return eps.script {}";
+        await manager.ValidateAndApplyCommand.ExecuteAsync(null);
+
+        Assert.True(context.Workspace.SelectedProfileSet?.Script?.Enabled);
+        Assert.True(context.Workspace.Document.GlobalScript?.Enabled);
+    }
+
+    [Fact]
+    public async Task AdvancedSummaryPersistsBindingAndOpensSelectedProfileInManager()
+    {
+        using TestContext context = CreateContext();
+        ScriptManagerViewModel manager = context.ViewModel.Scripts;
+        manager.Source = "return eps.script {}";
+        await manager.ValidateAndApplyCommand.ExecuteAsync(null);
+        var key = new KeyIdentity(InputDeviceKind.Mouse, (ushort)InputMouseButton.X1, false, KeyModifiers.None);
+
+        context.ViewModel.Crosshair.Script.Bindings[0].Key = key;
+        context.ViewModel.Crosshair.Script.OpenScriptManagerCommand.Execute(null);
+
+        Assert.Equal(key, context.Workspace.SelectedProfile.Script?.Bindings[0].Key);
+        Assert.Same(context.ViewModel.Scripts, context.ViewModel.SelectedNavigation.Content);
+        Assert.True(context.ViewModel.Scripts.IsAssignmentSelected);
+        Assert.Equal(ScriptScope.Profile, context.ViewModel.Scripts.Scope);
     }
 
     [AvaloniaFact(
@@ -257,6 +483,32 @@ public sealed class UiWorkflowTests
         window.Close();
     }
 
+    [AvaloniaFact(
+        "ExternalPeepSight.UI.Tests.AvaloniaTestSetup.BuildAvaloniaApp",
+        30_000)]
+    public void ClickingHotkeyFieldShowsCaptureFeedback()
+    {
+        var field = new HotkeyCaptureBox
+        {
+            PlaceholderText = "Click to bind",
+            CapturingText = "Waiting for input",
+        };
+        var window = new Window
+        {
+            Content = field,
+            Width = 400,
+            Height = 100,
+        };
+
+        window.Show();
+        field.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+
+        Assert.True(field.IsCapturing);
+        Assert.Equal(field.CapturingText, field.Content);
+
+        window.Close();
+    }
+
     [Fact]
     public void MouseHotkeyHasRecognizableDisplayText()
     {
@@ -358,7 +610,8 @@ public sealed class UiWorkflowTests
             new FakeMonitorEnumeration(),
             new ThemeService(),
             preferencesStore,
-            UiPreferences.Default);
+            UiPreferences.Default,
+            new ScriptLibraryStore(Path.Combine(root, "scripts.json")));
         return new TestContext(root, workspace, viewModel);
     }
 
@@ -367,6 +620,8 @@ public sealed class UiWorkflowTests
         ConfigurationWorkspace workspace,
         MainWindowViewModel viewModel) : IDisposable
     {
+        public string Root => root;
+
         public ConfigurationWorkspace Workspace { get; } = workspace;
 
         public MainWindowViewModel ViewModel { get; } = viewModel;
@@ -378,7 +633,7 @@ public sealed class UiWorkflowTests
         }
     }
 
-    private sealed class FakeHostSession : IHostSession
+    private sealed class FakeHostSession : IHostSession, IScriptValidationSession
     {
         public event EventHandler<JsonElement>? StateChanged
         {
@@ -402,6 +657,23 @@ public sealed class UiWorkflowTests
             ulong configurationVersion,
             JsonElement snapshot,
             CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<JsonElement> ValidateScriptAsync(
+            JsonElement payload,
+            CancellationToken cancellationToken = default)
+        {
+            string defaultKey = payload.GetProperty("scope").GetString() switch
+            {
+                "profileSet" => """{"device":"mouse","code":4,"extended":false,"modifiers":"none"}""",
+                "global" => """{"device":"mouse","code":5,"extended":false,"modifiers":"none"}""",
+                _ => """{"device":"keyboard","code":49,"extended":false,"modifiers":"ctrl"}""",
+            };
+            using JsonDocument response = JsonDocument.Parse(
+                """{"declarations":{"apiVersion":"1","bindings":[{"id":"toggle","displayName":"Toggle","pressed":true,"released":false,"defaultEnabled":true,"defaultKey":""" +
+                defaultKey +
+                """}],"settings":[],"ui":null}}""");
+            return Task.FromResult(response.RootElement.Clone());
+        }
     }
 
     private sealed class RejectingHostSession : IHostSession

@@ -1,4 +1,4 @@
-#include "current_user_security.h"
+﻿#include "current_user_security.h"
 #include "ipc_endpoint.h"
 #include "ipc_protocol.h"
 #include "named_pipe_server.h"
@@ -19,9 +19,11 @@
 #include <fstream>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace
@@ -102,6 +104,26 @@ void write_frame(_In_ const HANDLE pipe, const std::uint32_t encoded_size, const
     return std::string(reinterpret_cast<const char *>(frame.data() + sizeof(size)), size);
 }
 
+[[nodiscard]] std::optional<std::string> read_message_with_timeout(_In_ const HANDLE pipe,
+                                                                   const std::chrono::milliseconds timeout)
+{
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        DWORD available = 0U;
+        if (!PeekNamedPipe(pipe, nullptr, 0U, nullptr, &available, nullptr))
+        {
+            return std::nullopt;
+        }
+        if (available > 0U)
+        {
+            return read_message(pipe);
+        }
+        std::this_thread::sleep_for(10ms);
+    }
+    return std::nullopt;
+}
+
 void expect_server_disconnects(_In_ const HANDLE pipe)
 {
     for (int attempt = 0; attempt < 50; ++attempt)
@@ -158,6 +180,11 @@ class RunningServer
         {
             std::rethrow_exception(failure_);
         }
+    }
+
+    void publish_host_snapshot(std::string snapshot_json)
+    {
+        state_.publish_host_snapshot(std::move(snapshot_json));
     }
 
   private:
@@ -288,6 +315,23 @@ TEST(NamedPipeServer, AuthenticatesAppliesAndRestoresStateAfterReconnect)
 
     EXPECT_NE(std::string::npos, state.find("\"configurationVersion\":5"));
     EXPECT_NE(std::string::npos, state.find("\"profile\":\"alpha\""));
+    server.rethrow_if_failed();
+}
+
+TEST(NamedPipeServer, PushesHostStateChangeWithoutAnotherClientRequest)
+{
+    RunningServer server;
+    const UniqueHandle client = connect_client(server.endpoint().pipe_name);
+    ASSERT_TRUE(client);
+    authenticate(client.get(), server.endpoint());
+
+    server.publish_host_snapshot(R"({"profile":"script-selected"})");
+
+    const std::optional<std::string> notification = read_message_with_timeout(client.get(), 1s);
+    ASSERT_TRUE(notification);
+    EXPECT_NE(std::string::npos, notification->find(R"("type":"HostStateChanged")"));
+    EXPECT_NE(std::string::npos, notification->find(R"("configurationVersion":1)"));
+    EXPECT_NE(std::string::npos, notification->find(R"("snapshot":{"profile":"script-selected"})"));
     server.rethrow_if_failed();
 }
 

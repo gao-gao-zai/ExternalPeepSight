@@ -1,4 +1,4 @@
-#include "named_pipe_server.h"
+﻿#include "named_pipe_server.h"
 
 #include "current_user_security.h"
 #include "diagnostics.h"
@@ -8,9 +8,11 @@
 #include <array>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace external_peepsight
@@ -163,13 +165,19 @@ using UniqueHandle = std::unique_ptr<void, HandleCloser>;
 void serve_client(_In_ const HANDLE pipe, const IpcEndpoint &endpoint, IpcHostState &host_state,
                   const std::stop_token stop_token)
 {
+    std::stop_source connection_stop;
+    std::stop_callback server_stop_callback(stop_token, [&connection_stop] { connection_stop.request_stop(); });
+    const std::stop_token connection_stop_token = connection_stop.get_token();
+    std::mutex write_mutex;
+    std::optional<std::jthread> notification_thread;
+    const std::uint64_t initial_host_revision = host_state.host_snapshot_revision();
     IpcSession session(host_state, endpoint.handshake_token);
-    while (!stop_token.stop_requested())
+    while (!connection_stop_token.stop_requested())
     {
         std::optional<std::string> message;
         try
         {
-            message = read_message(pipe, stop_token);
+            message = read_message(pipe, connection_stop_token);
         }
         catch (const std::exception &error)
         {
@@ -181,8 +189,58 @@ void serve_client(_In_ const HANDLE pipe, const IpcEndpoint &endpoint, IpcHostSt
             return;
         }
 
+        const bool was_authenticated = session.authenticated();
         const IpcSessionResult result = session.handle_message(*message);
-        if (!write_message(pipe, result.response_json, stop_token) || result.disconnect)
+        {
+            std::scoped_lock lock(write_mutex);
+            if (!write_message(pipe, result.response_json, connection_stop_token))
+            {
+                return;
+            }
+        }
+
+        if (!was_authenticated && session.authenticated())
+        {
+            notification_thread.emplace(
+                [pipe, &host_state, &connection_stop, &write_mutex,
+                 initial_host_revision](const std::stop_token notification_stop_token)
+                {
+                    std::stop_callback notification_stop_callback(notification_stop_token, [&connection_stop]
+                                                                  { connection_stop.request_stop(); });
+                    try
+                    {
+                        winrt::init_apartment(winrt::apartment_type::multi_threaded);
+                        std::uint64_t observed_revision = initial_host_revision;
+                        const std::stop_token connection_token = connection_stop.get_token();
+                        while (!connection_token.stop_requested())
+                        {
+                            const std::optional<IpcHostStateChange> change =
+                                host_state.wait_for_host_snapshot_after(observed_revision, connection_token);
+                            if (!change)
+                            {
+                                return;
+                            }
+                            observed_revision = change->revision;
+                            const std::string notification = make_host_state_changed(change->state);
+                            std::scoped_lock lock(write_mutex);
+                            if (!write_message(pipe, notification, connection_token))
+                            {
+                                connection_stop.request_stop();
+                                CancelIoEx(pipe, nullptr);
+                                return;
+                            }
+                        }
+                    }
+                    catch (const std::exception &error)
+                    {
+                        log_diagnostic(DiagnosticLevel::warning, "ipc.notification_failed", error.what());
+                        connection_stop.request_stop();
+                        CancelIoEx(pipe, nullptr);
+                    }
+                });
+        }
+
+        if (result.disconnect)
         {
             return;
         }

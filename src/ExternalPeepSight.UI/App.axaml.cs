@@ -67,7 +67,8 @@ public partial class App : Application, IDisposable
             new MonitorEnumerationService(),
             theme,
             preferencesStore,
-            preferences);
+            preferences,
+            new ScriptLibraryStore(Path.Combine(applicationRoot, "scripts.json")));
         window.DataContext = mainWindowViewModel;
         desktop.MainWindow = window;
         desktop.Exit += OnExit;

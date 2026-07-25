@@ -1,4 +1,4 @@
-#include "ipc_protocol.h"
+﻿#include "ipc_protocol.h"
 
 #include <objbase.h>
 #include <windows.h>
@@ -39,6 +39,7 @@ enum class MessageType
     set_switch_state,
     set_monitor_selection,
     show_toast,
+    validate_script,
     ack,
     error,
     host_state_changed,
@@ -169,6 +170,10 @@ void require_allowed_properties(const JsonObject &object, const std::initializer
     if (value == "ShowToast")
     {
         return MessageType::show_toast;
+    }
+    if (value == "ValidateScript")
+    {
+        return MessageType::validate_script;
     }
     if (value == "Ack")
     {
@@ -352,6 +357,18 @@ void require_allowed_properties(const JsonObject &object, const std::initializer
     return make_ack(envelope.request_id, ack);
 }
 
+[[nodiscard]] IpcSessionResult handle_validate_script(const ParsedEnvelope &envelope, IpcHostState &host_state)
+{
+    const JsonObject payload = require_payload_object(envelope.payload);
+    require_allowed_properties(payload, {L"scope", L"source", L"settings"});
+    const std::string result = host_state.validate_script(winrt::to_string(payload.Stringify()));
+
+    JsonObject ack;
+    ack.SetNamedValue(L"command", JsonValue::CreateStringValue(L"ValidateScript"));
+    ack.SetNamedValue(L"declarations", JsonObject::Parse(winrt::to_hstring(result)));
+    return make_ack(envelope.request_id, ack);
+}
+
 [[nodiscard]] IpcSessionResult handle_authenticated_message(const ParsedEnvelope &envelope, IpcHostState &host_state)
 {
     switch (envelope.type)
@@ -362,6 +379,8 @@ void require_allowed_properties(const JsonObject &object, const std::initializer
         return handle_apply_snapshot(envelope, host_state);
     case MessageType::show_toast:
         return handle_show_toast(envelope, host_state);
+    case MessageType::validate_script:
+        return handle_validate_script(envelope, host_state);
     case MessageType::hello:
         return make_error(envelope.request_id, L"AlreadyAuthenticated", L"The Hello handshake has already completed.",
                           false);
@@ -394,7 +413,7 @@ IpcApplyResult IpcHostState::apply(const std::uint64_t configuration_version, st
 
     if (validator_)
     {
-        validator_(snapshot_json);
+        validator_(configuration_version, snapshot_json);
     }
     configuration_version_ = configuration_version;
     snapshot_json_ = std::move(snapshot_json);
@@ -421,8 +440,9 @@ const std::wstring &IpcClientError::wide_message() const noexcept
     return message_;
 }
 
-IpcHostState::IpcHostState(SnapshotValidator validator, ToastHandler toast_handler)
-    : validator_(std::move(validator)), toast_handler_(std::move(toast_handler))
+IpcHostState::IpcHostState(SnapshotValidator validator, ToastHandler toast_handler, ScriptValidator script_validator)
+    : validator_(std::move(validator)), toast_handler_(std::move(toast_handler)),
+      script_validator_(std::move(script_validator))
 {
 }
 
@@ -432,6 +452,45 @@ IpcHostStateSnapshot IpcHostState::snapshot() const
     return {configuration_version_, snapshot_json_};
 }
 
+std::uint64_t IpcHostState::host_snapshot_revision() const
+{
+    std::scoped_lock lock(mutex_);
+    return host_snapshot_revision_;
+}
+
+std::optional<IpcHostStateChange> IpcHostState::wait_for_host_snapshot_after(const std::uint64_t observed_revision,
+                                                                             const std::stop_token stop_token) const
+{
+    std::unique_lock lock(mutex_);
+    const bool changed = host_snapshot_changed_.wait(lock, stop_token, [this, observed_revision]
+                                                     { return host_snapshot_revision_ != observed_revision; });
+    if (!changed)
+    {
+        return std::nullopt;
+    }
+    return IpcHostStateChange{host_snapshot_revision_, {configuration_version_, snapshot_json_}};
+}
+
+void IpcHostState::publish_host_snapshot(std::string snapshot_json)
+{
+    if (snapshot_json.empty())
+    {
+        throw std::invalid_argument("Host snapshot JSON cannot be empty.");
+    }
+
+    {
+        std::scoped_lock lock(mutex_);
+        if (configuration_version_ < kMaximumJsonInteger)
+        {
+            ++configuration_version_;
+        }
+        host_snapshot_revision_ =
+            host_snapshot_revision_ == (std::numeric_limits<std::uint64_t>::max)() ? 0U : host_snapshot_revision_ + 1U;
+        snapshot_json_ = std::move(snapshot_json);
+    }
+    host_snapshot_changed_.notify_all();
+}
+
 void IpcHostState::show_toast(std::string payload_json) const
 {
     if (!toast_handler_)
@@ -439,6 +498,26 @@ void IpcHostState::show_toast(std::string payload_json) const
         throw IpcClientError(L"CommandNotAvailable", L"ShowToast is not available in this Host instance.");
     }
     toast_handler_(payload_json);
+}
+
+std::string IpcHostState::validate_script(std::string payload_json) const
+{
+    if (!script_validator_)
+    {
+        throw IpcClientError(L"CommandNotAvailable", L"Script validation is not available in this Host instance.");
+    }
+    try
+    {
+        return script_validator_(payload_json);
+    }
+    catch (const IpcClientError &)
+    {
+        throw;
+    }
+    catch (const std::exception &error)
+    {
+        throw IpcClientError(L"InvalidScript", winrt::to_hstring(error.what()).c_str());
+    }
 }
 
 IpcSession::IpcSession(IpcHostState &host_state, std::string handshake_token)
@@ -526,5 +605,17 @@ void IpcSession::cache_response(std::string request_id, std::string request_json
 
     response_cache_order_.push_back(request_id);
     response_cache_.emplace(std::move(request_id), CachedRequest{std::move(request_json), result});
+}
+
+std::string make_host_state_changed(const IpcHostStateSnapshot &state)
+{
+    JsonObject payload;
+    payload.SetNamedValue(L"configurationVersion",
+                          JsonValue::CreateNumberValue(static_cast<double>(state.configuration_version)));
+    payload.SetNamedValue(L"snapshot", JsonValue::Parse(winrt::to_hstring(state.snapshot_json)));
+
+    JsonObject response = make_base_response(kUnknownRequestId, L"HostStateChanged");
+    response.SetNamedValue(L"payload", payload);
+    return winrt::to_string(response.Stringify());
 }
 } // namespace external_peepsight

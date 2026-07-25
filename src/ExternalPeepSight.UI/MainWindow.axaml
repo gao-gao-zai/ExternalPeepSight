@@ -1,4 +1,4 @@
-<Window
+﻿<Window
     x:Class="ExternalPeepSight.UI.MainWindow"
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -19,6 +19,7 @@
         <DataTemplate DataType="vm:MonitorSelectionViewModel"><views:MonitorSelectionView /></DataTemplate>
         <DataTemplate DataType="vm:SwitchesViewModel"><views:SwitchesView /></DataTemplate>
         <DataTemplate DataType="vm:ProfileSetsViewModel"><views:ProfileSetsView /></DataTemplate>
+        <DataTemplate DataType="vm:ScriptManagerViewModel"><views:ScriptManagerView /></DataTemplate>
         <DataTemplate DataType="vm:ImportExportViewModel"><views:ImportExportView /></DataTemplate>
         <DataTemplate DataType="vm:SettingsViewModel"><views:SettingsView /></DataTemplate>
     </Window.DataTemplates>

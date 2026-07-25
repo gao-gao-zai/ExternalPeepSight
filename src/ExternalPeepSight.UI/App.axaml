@@ -13,6 +13,7 @@
                     <SolidColorBrush x:Key="AppSubtleSurfaceBrush" Color="#F7F9FA" />
                     <SolidColorBrush x:Key="AppHoverBrush" Color="#E3E8EC" />
                     <SolidColorBrush x:Key="AppBorderBrush" Color="#D6DCE1" />
+                    <SolidColorBrush x:Key="AppControlBorderBrush" Color="#98A5AF" />
                     <SolidColorBrush x:Key="AppTextBrush" Color="#1B2025" />
                     <SolidColorBrush x:Key="AppSecondaryTextBrush" Color="#5D6770" />
                     <SolidColorBrush x:Key="AppAccentBrush" Color="#0B7565" />
@@ -29,6 +30,7 @@
                     <SolidColorBrush x:Key="AppSubtleSurfaceBrush" Color="#242A30" />
                     <SolidColorBrush x:Key="AppHoverBrush" Color="#2A3137" />
                     <SolidColorBrush x:Key="AppBorderBrush" Color="#353D44" />
+                    <SolidColorBrush x:Key="AppControlBorderBrush" Color="#697781" />
                     <SolidColorBrush x:Key="AppTextBrush" Color="#F0F3F5" />
                     <SolidColorBrush x:Key="AppSecondaryTextBrush" Color="#A8B0B7" />
                     <SolidColorBrush x:Key="AppAccentBrush" Color="#59C7B2" />

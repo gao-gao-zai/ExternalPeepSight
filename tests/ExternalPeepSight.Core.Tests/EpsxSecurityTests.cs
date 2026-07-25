@@ -22,7 +22,7 @@ public sealed class EpsxSecurityTests
     {
         using MemoryStream missingManifest = CreateZip(
             ("profiles.json", CreatePortableDocument(ConfigurationDefaults.Create())));
-        using MemoryStream missingProfiles = CreateZip(("manifest.json", "{\"schemaVersion\":6,\"assets\":[]}"));
+        using MemoryStream missingProfiles = CreateZip(("manifest.json", "{\"schemaVersion\":8,\"assets\":[]}"));
 
         Assert.Throws<ConfigurationFormatException>(() =>
             EpsxArchive.Import(missingManifest, ConfigurationDefaults.Create()));
@@ -165,7 +165,7 @@ public sealed class EpsxSecurityTests
         JsonObject portable = JsonNode.Parse(CreatePortableDocument(document))!.AsObject();
         portable["toasts"] = JsonSerializer.SerializeToNode(document.Toasts);
         using MemoryStream package = CreateZip(
-            ("manifest.json", "{\"schemaVersion\":6,\"assets\":[]}"),
+            ("manifest.json", "{\"schemaVersion\":8,\"assets\":[]}"),
             ("profiles.json", portable.ToJsonString()));
 
         Assert.Throws<ConfigurationFormatException>(() =>
@@ -231,10 +231,12 @@ public sealed class EpsxSecurityTests
             ActiveMode = OverlayMode.Image,
             Image = new ImageOverlay(profileId, AnchorMode.ScreenCenter, new PixelPoint(0, 0), 1, true),
         };
+        Guid profileSetId = Guid.NewGuid();
         ConfigurationDocument document = ConfigurationDefaults.Create() with
         {
             Profiles = [profile],
-            ProfileSets = [new(Guid.NewGuid(), "Images", [profileId], profileId)],
+            ProfileSets = [new(profileSetId, "Images", [profileId], profileId)],
+            ActiveProfileSetId = profileSetId,
             Assets = [reference],
         };
         return (document, new EpsxAsset(reference, content));

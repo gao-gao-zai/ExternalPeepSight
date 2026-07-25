@@ -28,7 +28,7 @@ public static class ConfigurationJson
     /// <summary>
     /// Gets the newest schema version supported by this build.
     /// </summary>
-    public const int CurrentSchemaVersion = 6;
+    public const int CurrentSchemaVersion = 8;
 
     private static readonly JsonSerializerOptions CompactOptions = CreateOptions(false);
     private static readonly JsonSerializerOptions IndentedOptions = CreateOptions(true);
@@ -73,12 +73,20 @@ public static class ConfigurationJson
             int version = GetSchemaVersion(root);
             JsonObject migrated = version switch
             {
-                0 => MigrateVersionFive(MigrateVersionFour(MigrateVersionThree(MigrateVersionTwo(MigrateVersionOne(MigrateVersionZero(root)))))),
-                1 => MigrateVersionFive(MigrateVersionFour(MigrateVersionThree(MigrateVersionTwo(MigrateVersionOne(root))))),
-                2 => MigrateVersionFive(MigrateVersionFour(MigrateVersionThree(MigrateVersionTwo(root)))),
-                3 => MigrateVersionFive(MigrateVersionFour(MigrateVersionThree(root))),
-                4 => MigrateVersionFive(MigrateVersionFour(root)),
-                5 => MigrateVersionFive(root),
+                0 => MigrateVersionSeven(MigrateVersionSix(
+                    MigrateVersionFive(MigrateVersionFour(
+                        MigrateVersionThree(MigrateVersionTwo(MigrateVersionOne(MigrateVersionZero(root)))))))),
+                1 => MigrateVersionSeven(MigrateVersionSix(
+                    MigrateVersionFive(MigrateVersionFour(
+                        MigrateVersionThree(MigrateVersionTwo(MigrateVersionOne(root))))))),
+                2 => MigrateVersionSeven(MigrateVersionSix(
+                    MigrateVersionFive(MigrateVersionFour(MigrateVersionThree(MigrateVersionTwo(root)))))),
+                3 => MigrateVersionSeven(MigrateVersionSix(
+                    MigrateVersionFive(MigrateVersionFour(MigrateVersionThree(root))))),
+                4 => MigrateVersionSeven(MigrateVersionSix(MigrateVersionFive(MigrateVersionFour(root)))),
+                5 => MigrateVersionSeven(MigrateVersionSix(MigrateVersionFive(root))),
+                6 => MigrateVersionSeven(MigrateVersionSix(root)),
+                7 => MigrateVersionSeven(root),
                 CurrentSchemaVersion => root,
                 > CurrentSchemaVersion => throw new ConfigurationFormatException(
                     $"Configuration schema version {version} is newer than supported version {CurrentSchemaVersion}."),
@@ -183,7 +191,7 @@ public static class ConfigurationJson
             }
         }
 
-        migrated["schemaVersion"] = CurrentSchemaVersion;
+        migrated["schemaVersion"] = 3;
         return migrated;
     }
 
@@ -220,7 +228,7 @@ public static class ConfigurationJson
             }
         }
 
-        migrated["schemaVersion"] = CurrentSchemaVersion;
+        migrated["schemaVersion"] = 5;
         return migrated;
     }
 
@@ -228,7 +236,7 @@ public static class ConfigurationJson
     {
         var migrated = (JsonObject)root.DeepClone();
         migrated["inputBackend"] ??= "rawInput";
-        migrated["schemaVersion"] = CurrentSchemaVersion;
+        migrated["schemaVersion"] = 6;
         return migrated;
     }
 
@@ -281,8 +289,102 @@ public static class ConfigurationJson
             }
         }
 
+        migrated["schemaVersion"] = 4;
+        return migrated;
+    }
+
+    private static JsonObject MigrateVersionSix(JsonObject root)
+    {
+        var migrated = (JsonObject)root.DeepClone();
+        migrated["activeProfileSetId"] ??= FindFirstProfileSetId(migrated);
+
+        if (migrated["profiles"] is JsonArray profiles)
+        {
+            foreach (JsonNode? profileNode in profiles)
+            {
+                if (profileNode is not JsonObject profile)
+                {
+                    continue;
+                }
+
+                profile["controlMode"] ??= "basic";
+                profile["script"] ??= null;
+            }
+        }
+
+        if (migrated["profileSets"] is JsonArray profileSets)
+        {
+            foreach (JsonNode? profileSetNode in profileSets)
+            {
+                if (profileSetNode is JsonObject profileSet)
+                {
+                    profileSet["script"] ??= null;
+                }
+            }
+        }
+
+        migrated["globalScript"] ??= null;
+        migrated["schemaVersion"] = 7;
+        return migrated;
+    }
+
+    private static JsonObject MigrateVersionSeven(JsonObject root)
+    {
+        var migrated = (JsonObject)root.DeepClone();
+        migrated["activeProfileSetId"] ??= FindFirstProfileSetId(migrated);
+        migrated["globalScript"] ??= null;
+
+        if (migrated["profiles"] is JsonArray profiles)
+        {
+            foreach (JsonNode? profileNode in profiles)
+            {
+                if (profileNode is JsonObject profile)
+                {
+                    AddScriptUi(profile["script"]);
+                }
+            }
+        }
+
+        if (migrated["profileSets"] is JsonArray profileSets)
+        {
+            foreach (JsonNode? profileSetNode in profileSets)
+            {
+                if (profileSetNode is JsonObject profileSet)
+                {
+                    AddScriptUi(profileSet["script"]);
+                }
+            }
+        }
+
+        AddScriptUi(migrated["globalScript"]);
         migrated["schemaVersion"] = CurrentSchemaVersion;
         return migrated;
+    }
+
+    private static void AddScriptUi(JsonNode? scriptNode)
+    {
+        if (scriptNode is JsonObject script)
+        {
+            script["ui"] ??= null;
+        }
+    }
+
+    private static JsonNode FindFirstProfileSetId(JsonObject root)
+    {
+        if (root["profileSets"] is JsonArray profileSets)
+        {
+            foreach (JsonNode? item in profileSets)
+            {
+                if (item is JsonObject profileSet &&
+                    profileSet["id"] is JsonNode id &&
+                    id.GetValueKind() == JsonValueKind.String)
+                {
+                    return id.DeepClone();
+                }
+            }
+        }
+
+        return JsonValue.Create(Guid.Empty);
     }
 
     private static void MigrateBindingKeys(JsonObject? binding)
