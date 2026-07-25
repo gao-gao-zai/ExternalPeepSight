@@ -107,6 +107,7 @@ public static class ConfigurationValidator
     private const int MaxFileNameLength = 255;
     private const int MaxMonitorIdLength = 512;
     private const int MaxScriptSourceLength = 256 * 1024;
+    private const int MaxScriptsPerTarget = 16;
     private const int MaxScriptItems = 64;
     private const int MaxScriptUiSections = 16;
     private const int MaxScriptIdentifierLength = 64;
@@ -149,7 +150,7 @@ public static class ConfigurationValidator
             issues.Add(new ValidationIssue("$.inputBackend", "Input capture backend is invalid."));
         }
         ValidateToasts(document.Toasts, issues);
-        ValidateScript(document.GlobalScript, "$.globalScript", issues);
+        ValidateScripts(document.GlobalScripts, "$.globalScripts", issues);
         ValidateActiveInputConflicts(document, issues);
         return new ConfigurationValidationResult(issues);
     }
@@ -208,15 +209,11 @@ public static class ConfigurationValidator
             {
                 issues.Add(new ValidationIssue($"{path}.controlMode", "Display control mode is invalid."));
             }
-            else if (profile.ControlMode == DisplayControlMode.Lua &&
-                (profile.Script is null || !profile.Script.Enabled))
-            {
-                issues.Add(new ValidationIssue(
-                    $"{path}.script",
-                    "Lua control mode requires an enabled profile script."));
-            }
-
-            ValidateScript(profile.Script, $"{path}.script", issues);
+            ValidateScripts(
+                profile.Scripts,
+                $"{path}.scripts",
+                issues,
+                requireEnabled: profile.ControlMode == DisplayControlMode.Lua);
         }
 
         HashSet<Guid> assetIds = document.Assets is null
@@ -289,7 +286,7 @@ public static class ConfigurationValidator
                     "Selected profile must belong to the profile set."));
             }
 
-            ValidateScript(set.Script, $"{path}.script", issues);
+            ValidateScripts(set.Scripts, $"{path}.scripts", issues);
         }
     }
 
@@ -322,16 +319,60 @@ public static class ConfigurationValidator
         }
     }
 
-    private static void ValidateScript(
-        ScriptConfiguration? script,
+    private static void ValidateScripts(
+        ScriptConfiguration[]? scripts,
         string path,
-        List<ValidationIssue> issues)
+        List<ValidationIssue> issues,
+        bool requireEnabled = false)
     {
-        if (script is null)
+        if (scripts is null)
         {
+            issues.Add(new ValidationIssue(path, "Script collection is required."));
             return;
         }
 
+        if (scripts.Length > MaxScriptsPerTarget)
+        {
+            issues.Add(new ValidationIssue(path, "Script count exceeds the configured limit."));
+            return;
+        }
+
+        var identifiers = new HashSet<Guid>();
+        bool hasEnabledScript = false;
+        for (int index = 0; index < scripts.Length; index++)
+        {
+            ScriptConfiguration? script = scripts[index];
+            string scriptPath = $"{path}[{index}]";
+            if (script is null)
+            {
+                issues.Add(new ValidationIssue(scriptPath, "Script configuration is required."));
+                continue;
+            }
+
+            if (script.Id == Guid.Empty || !identifiers.Add(script.Id))
+            {
+                issues.Add(new ValidationIssue(
+                    $"{scriptPath}.id",
+                    "Script identifier must be present and unique within its target."));
+            }
+            ValidateName(script.Name, $"{scriptPath}.name", issues);
+            ValidateScript(script, scriptPath, issues);
+            hasEnabledScript |= script.Enabled;
+        }
+
+        if (requireEnabled && !hasEnabledScript)
+        {
+            issues.Add(new ValidationIssue(
+                path,
+                "Lua control mode requires at least one enabled profile script."));
+        }
+    }
+
+    private static void ValidateScript(
+        ScriptConfiguration script,
+        string path,
+        List<ValidationIssue> issues)
+    {
         if (script.ApiVersion is not ("1" or "2"))
         {
             issues.Add(new ValidationIssue($"{path}.apiVersion", "Script API version is not supported."));
@@ -683,11 +724,11 @@ public static class ConfigurationValidator
             AddBasic(activeProfile.Switches.SwitchB, "$.profiles[active].switches.switchB", Add, assigned, issues);
         }
 
-        AddScript(document.GlobalScript, "$.globalScript", Add, assigned, issues);
-        AddScript(activeSet?.Script, "$.profileSets[active].script", Add, assigned, issues);
+        AddScripts(document.GlobalScripts, "$.globalScripts", Add, assigned, issues);
+        AddScripts(activeSet?.Scripts, "$.profileSets[active].scripts", Add, assigned, issues);
         if (activeProfile?.ControlMode == DisplayControlMode.Lua)
         {
-            AddScript(activeProfile.Script, "$.profiles[active].script", Add, assigned, issues);
+            AddScripts(activeProfile.Scripts, "$.profiles[active].scripts", Add, assigned, issues);
         }
     }
 
@@ -713,24 +754,37 @@ public static class ConfigurationValidator
         }
     }
 
-    private static void AddScript(
-        ScriptConfiguration? script,
+    private static void AddScripts(
+        ScriptConfiguration[]? scripts,
         string path,
         Action<KeyIdentity?, string, Dictionary<KeyIdentity, string>, List<ValidationIssue>> add,
         Dictionary<KeyIdentity, string> assigned,
         List<ValidationIssue> issues)
     {
-        if (script is null || !script.Enabled || script.Bindings is null)
+        if (scripts is null)
         {
             return;
         }
 
-        for (int index = 0; index < script.Bindings.Length; index++)
+        for (int scriptIndex = 0; scriptIndex < scripts.Length; scriptIndex++)
         {
-            ScriptBindingSlot? binding = script.Bindings[index];
-            if (binding is not null && binding.Enabled)
+            ScriptConfiguration? script = scripts[scriptIndex];
+            if (script is null || !script.Enabled || script.Bindings is null)
             {
-                add(binding.Key, $"{path}.bindings[{index}].key", assigned, issues);
+                continue;
+            }
+
+            for (int bindingIndex = 0; bindingIndex < script.Bindings.Length; bindingIndex++)
+            {
+                ScriptBindingSlot? binding = script.Bindings[bindingIndex];
+                if (binding is not null && binding.Enabled)
+                {
+                    add(
+                        binding.Key,
+                        $"{path}[{scriptIndex}].bindings[{bindingIndex}].key",
+                        assigned,
+                        issues);
+                }
             }
         }
     }

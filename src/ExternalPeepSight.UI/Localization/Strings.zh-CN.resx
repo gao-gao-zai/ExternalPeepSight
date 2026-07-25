@@ -84,9 +84,9 @@
   <data name="Script.ValidationFailed" xml:space="preserve"><value>脚本验证失败：{0}</value></data>
   <data name="Script.ConfigurationRejected" xml:space="preserve"><value>验证后的脚本配置未被接受。</value></data>
   <data name="Script.CurrentProfileAdvanced" xml:space="preserve"><value>当前配置的高级控制</value></data>
-  <data name="Script.RuntimeConfigurationHint" xml:space="preserve"><value>脚本注册的配置与按键绑定会立即生效。</value></data>
+  <data name="Script.RuntimeConfigurationHint" xml:space="preserve"><value>每个已启用脚本分别提供配置、按键绑定和显示许可。</value></data>
   <data name="Script.OpenManager" xml:space="preserve"><value>进入脚本管理</value></data>
-  <data name="Script.NoProfileScript" xml:space="preserve"><value>当前配置尚未挂载配置级脚本。可进入脚本管理新建脚本，或从独立脚本库复制。</value></data>
+  <data name="Script.NoProfileScript" xml:space="preserve"><value>当前配置尚未挂载配置级脚本。可进入脚本管理新建或从独立脚本库复制多份脚本。</value></data>
   <data name="Script.EnabledState" xml:space="preserve"><value>已启用</value></data>
   <data name="Script.DisabledState" xml:space="preserve"><value>已停用</value></data>
   <data name="Script.RegisteredSettings" xml:space="preserve"><value>脚本注册的配置</value></data>
@@ -97,6 +97,7 @@
   <data name="Script.CurrentTarget" xml:space="preserve"><value>当前目标</value></data>
   <data name="Script.AttachedScript" xml:space="preserve"><value>已挂载脚本</value></data>
   <data name="Script.NoAttachedScript" xml:space="preserve"><value>尚未挂载脚本</value></data>
+  <data name="Script.AttachNew" xml:space="preserve"><value>挂载新脚本</value></data>
   <data name="Script.Library" xml:space="preserve"><value>独立脚本库</value></data>
   <data name="Script.LibraryEmpty" xml:space="preserve"><value>此作用域还没有脚本，点击加号新建。</value></data>
   <data name="Script.NewScript" xml:space="preserve"><value>新建脚本</value></data>
@@ -111,6 +112,7 @@
   <data name="Script.AssignmentSavedToLibrary" xml:space="preserve"><value>已将当前挂载脚本复制到独立脚本库。</value></data>
   <data name="Script.CopiedToTarget" xml:space="preserve"><value>脚本验证成功，已复制到当前目标。</value></data>
   <data name="Script.AssignmentDisabled" xml:space="preserve"><value>当前挂载脚本已停用。</value></data>
+  <data name="Script.AssignmentRemoved" xml:space="preserve"><value>当前挂载脚本已移除。</value></data>
   <data name="Script.LibrarySaveFailed" xml:space="preserve"><value>脚本库保存失败。</value></data>
   <data name="Image.Invalid" xml:space="preserve"><value>所选文件不是受支持的 PNG 或静态 SVG。</value></data>
   <data name="Dialog.SelectImage" xml:space="preserve"><value>选择图像</value></data>

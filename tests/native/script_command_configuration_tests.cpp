@@ -9,7 +9,7 @@ namespace
 {
 [[nodiscard]] std::string snapshot()
 {
-    return R"({"schemaVersion":8,"activeProfileSetId":"set-a","profiles":[)"
+    return R"({"schemaVersion":9,"activeProfileSetId":"set-a","profiles":[)"
            R"({"id":"profile-a"},{"id":"profile-b"},{"id":"profile-c"}],)"
            R"("profileSets":[)"
            R"({"id":"set-a","profileIds":["profile-a","profile-b"],"selectedProfileId":"profile-a"},)"

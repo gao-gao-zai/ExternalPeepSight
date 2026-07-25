@@ -68,12 +68,14 @@ internal sealed class ScriptBindingEditorViewModel : ObservableObject
 internal sealed class ScriptSettingEditorViewModel : ObservableObject
 {
     private readonly Action<ScriptSettingEditorViewModel> changed;
+    private readonly string groupName;
     private string value;
     private bool visible = true;
 
     public ScriptSettingEditorViewModel(
         ScriptSetting setting,
         ScriptUiItem? presentation,
+        string groupPrefix,
         Action<ScriptSettingEditorViewModel> changed)
     {
         Id = setting.Id;
@@ -88,6 +90,7 @@ internal sealed class ScriptSettingEditorViewModel : ObservableObject
         Unit = presentation?.Unit ?? string.Empty;
         Step = presentation?.Step ?? (setting.Type == ScriptSettingType.Integer ? 1 : 0.1);
         VisibleWhen = presentation?.VisibleWhen;
+        groupName = $"{groupPrefix}-{setting.Id}";
         this.changed = changed;
         SegmentedOptions = Options
             .Select(option => new ScriptSettingOptionViewModel(this, option))
@@ -136,7 +139,7 @@ internal sealed class ScriptSettingEditorViewModel : ObservableObject
 
     public ScriptUiVisibilityCondition? VisibleWhen { get; }
 
-    public string GroupName => $"script-setting-{Id}";
+    public string GroupName => groupName;
 
     public bool HasDescription => !string.IsNullOrEmpty(Description);
 
@@ -320,32 +323,40 @@ internal sealed class ScriptUiSectionEditorViewModel : ObservableObject
     }
 }
 
-internal sealed class ScriptAdvancedSummaryViewModel : WorkspaceViewModel
+internal sealed class ScriptAdvancedItemViewModel : ObservableObject
 {
-    private bool updatingValues;
+    private readonly ConfigurationWorkspace workspace;
+    private readonly Guid scriptId;
+    private readonly Action beginPersist;
+    private readonly Action endPersist;
 
-    public ScriptAdvancedSummaryViewModel(
+    public ScriptAdvancedItemViewModel(
         ConfigurationWorkspace workspace,
-        Action openScriptManager)
-        : base(workspace)
+        ScriptConfiguration script,
+        Action beginPersist,
+        Action endPersist)
     {
-        ArgumentNullException.ThrowIfNull(openScriptManager);
+        this.workspace = workspace;
+        scriptId = script.Id;
+        this.beginPersist = beginPersist;
+        this.endPersist = endPersist;
+        Name = script.Name;
+        IsEnabled = script.Enabled;
         Bindings = [];
         Settings = [];
         Sections = [];
-        OpenScriptManagerCommand = new RelayCommand(openScriptManager);
-        LoadFromDocument();
+        Load(script);
     }
+
+    public string Name { get; }
+
+    public bool IsEnabled { get; }
 
     public ObservableCollection<ScriptBindingEditorViewModel> Bindings { get; }
 
     public ObservableCollection<ScriptSettingEditorViewModel> Settings { get; }
 
     public ObservableCollection<ScriptUiSectionEditorViewModel> Sections { get; }
-
-    public bool HasScript => Profile.Script is not null;
-
-    public bool IsScriptEnabled => Profile.Script?.Enabled == true;
 
     public bool HasBindings => Bindings.Count > 0;
 
@@ -355,52 +366,37 @@ internal sealed class ScriptAdvancedSummaryViewModel : WorkspaceViewModel
 
     public bool UsesAutomaticUi => HasSettings && !HasCustomUi;
 
-    public bool HasNoDeclarations => HasScript && !HasBindings && !HasSettings;
+    public bool HasNoDeclarations => !HasBindings && !HasSettings;
 
-    public IRelayCommand OpenScriptManagerCommand { get; }
-
-    protected override void Refresh()
-    {
-        if (!updatingValues)
-        {
-            LoadFromDocument();
-        }
-    }
-
-    private void LoadFromDocument()
+    private void Load(ScriptConfiguration script)
     {
         Bindings.Clear();
         Settings.Clear();
         Sections.Clear();
-        if (Profile.Script is ScriptConfiguration script)
+        foreach (ScriptBindingSlot binding in script.Bindings)
         {
-            foreach (ScriptBindingSlot binding in script.Bindings)
-            {
-                Bindings.Add(new(binding, PersistDeclaredValues));
-            }
+            Bindings.Add(new(binding, PersistDeclaredValues));
+        }
 
-            Dictionary<string, ScriptUiItem> presentations = script.Ui?.Sections
-                .SelectMany(section => section.Items)
-                .ToDictionary(item => item.SettingId, StringComparer.Ordinal) ?? [];
-            foreach (ScriptSetting setting in script.Settings)
-            {
-                presentations.TryGetValue(setting.Id, out ScriptUiItem? presentation);
-                Settings.Add(new(setting, presentation, OnSettingChanged));
-            }
+        Dictionary<string, ScriptUiItem> presentations = script.Ui?.Sections
+            .SelectMany(section => section.Items)
+            .ToDictionary(item => item.SettingId, StringComparer.Ordinal) ?? [];
+        foreach (ScriptSetting setting in script.Settings)
+        {
+            presentations.TryGetValue(setting.Id, out ScriptUiItem? presentation);
+            Settings.Add(new(setting, presentation, $"script-setting-{scriptId:N}", OnSettingChanged));
+        }
 
-            var settingLookup = Settings.ToDictionary(setting => setting.Id, StringComparer.Ordinal);
-            UpdateConditionalVisibility(settingLookup);
-            if (script.Ui is not null)
+        var settingLookup = Settings.ToDictionary(setting => setting.Id, StringComparer.Ordinal);
+        UpdateConditionalVisibility(settingLookup);
+        if (script.Ui is not null)
+        {
+            foreach (ScriptUiSection section in script.Ui.Sections)
             {
-                foreach (ScriptUiSection section in script.Ui.Sections)
-                {
-                    Sections.Add(new(section, settingLookup));
-                }
+                Sections.Add(new(section, settingLookup));
             }
         }
 
-        OnPropertyChanged(nameof(HasScript));
-        OnPropertyChanged(nameof(IsScriptEnabled));
         OnPropertyChanged(nameof(HasBindings));
         OnPropertyChanged(nameof(HasSettings));
         OnPropertyChanged(nameof(HasCustomUi));
@@ -431,34 +427,104 @@ internal sealed class ScriptAdvancedSummaryViewModel : WorkspaceViewModel
 
     private void PersistDeclaredValues()
     {
-        updatingValues = true;
+        beginPersist();
         try
         {
-            bool updated = Workspace.UpdateSelectedProfile(profile =>
+            bool updated = workspace.UpdateSelectedProfile(profile =>
             {
-                if (profile.Script is not ScriptConfiguration script)
+                int scriptIndex = Array.FindIndex(profile.Scripts, script => script.Id == scriptId);
+                if (scriptIndex < 0)
                 {
                     return profile;
                 }
 
+                ScriptConfiguration[] scripts = profile.Scripts.ToArray();
+                scripts[scriptIndex] = scripts[scriptIndex] with
+                {
+                    Bindings = Bindings.Select(binding => binding.ToModel()).ToArray(),
+                    Settings = Settings.Select(setting => setting.ToModel()).ToArray(),
+                };
                 return profile with
                 {
-                    Script = script with
-                    {
-                        Bindings = Bindings.Select(binding => binding.ToModel()).ToArray(),
-                        Settings = Settings.Select(setting => setting.ToModel()).ToArray(),
-                    },
+                    Scripts = scripts,
                 };
             });
             if (!updated)
             {
-                LoadFromDocument();
+                ScriptConfiguration? current = workspace.SelectedProfile.Scripts
+                    .FirstOrDefault(script => script.Id == scriptId);
+                if (current is not null)
+                {
+                    Load(current);
+                }
             }
         }
         finally
         {
-            updatingValues = false;
+            endPersist();
         }
+    }
+}
+
+internal sealed class ScriptAdvancedSummaryViewModel : WorkspaceViewModel
+{
+    private static readonly ObservableCollection<ScriptBindingEditorViewModel> EmptyBindings = [];
+    private static readonly ObservableCollection<ScriptSettingEditorViewModel> EmptySettings = [];
+    private static readonly ObservableCollection<ScriptUiSectionEditorViewModel> EmptySections = [];
+    private bool persistingValues;
+
+    public ScriptAdvancedSummaryViewModel(
+        ConfigurationWorkspace workspace,
+        Action openScriptManager)
+        : base(workspace)
+    {
+        ArgumentNullException.ThrowIfNull(openScriptManager);
+        Scripts = [];
+        OpenScriptManagerCommand = new RelayCommand(openScriptManager);
+        LoadFromDocument();
+    }
+
+    public ObservableCollection<ScriptAdvancedItemViewModel> Scripts { get; }
+
+    public bool HasScript => Scripts.Count > 0;
+
+    public ObservableCollection<ScriptBindingEditorViewModel> Bindings =>
+        Scripts.FirstOrDefault()?.Bindings ?? EmptyBindings;
+
+    public ObservableCollection<ScriptSettingEditorViewModel> Settings =>
+        Scripts.FirstOrDefault()?.Settings ?? EmptySettings;
+
+    public ObservableCollection<ScriptUiSectionEditorViewModel> Sections =>
+        Scripts.FirstOrDefault()?.Sections ?? EmptySections;
+
+    public bool HasCustomUi => Scripts.FirstOrDefault()?.HasCustomUi == true;
+
+    public IRelayCommand OpenScriptManagerCommand { get; }
+
+    protected override void Refresh()
+    {
+        if (!persistingValues)
+        {
+            LoadFromDocument();
+        }
+    }
+
+    private void LoadFromDocument()
+    {
+        Scripts.Clear();
+        foreach (ScriptConfiguration script in Profile.Scripts)
+        {
+            Scripts.Add(new(
+                Workspace,
+                script,
+                () => persistingValues = true,
+                () => persistingValues = false));
+        }
+        OnPropertyChanged(nameof(HasScript));
+        OnPropertyChanged(nameof(Bindings));
+        OnPropertyChanged(nameof(Settings));
+        OnPropertyChanged(nameof(Sections));
+        OnPropertyChanged(nameof(HasCustomUi));
     }
 }
 
@@ -475,6 +541,22 @@ internal sealed class ScriptLibraryItemViewModel
     public string Name { get; }
 }
 
+internal sealed class ScriptAssignmentItemViewModel
+{
+    public ScriptAssignmentItemViewModel(ScriptConfiguration script)
+    {
+        Id = script.Id;
+        Name = script.Name;
+        Enabled = script.Enabled;
+    }
+
+    public Guid Id { get; }
+
+    public string Name { get; }
+
+    public bool Enabled { get; }
+}
+
 internal sealed class ScriptManagerViewModel : WorkspaceViewModel, IDisposable
 {
     private const string NewScriptTemplate = "return eps.script {\n}\n";
@@ -483,7 +565,9 @@ internal sealed class ScriptManagerViewModel : WorkspaceViewModel, IDisposable
     private readonly List<ScriptLibraryEntry> allScripts;
     private ScriptScope scope;
     private ScriptLibraryItemViewModel? selectedLibrary;
+    private ScriptAssignmentItemViewModel? selectedAssignment;
     private bool assignmentSelected = true;
+    private bool creatingAssignment;
     private string name = string.Empty;
     private string source = string.Empty;
     private string? statusText;
@@ -505,8 +589,10 @@ internal sealed class ScriptManagerViewModel : WorkspaceViewModel, IDisposable
             new(ScriptScope.ProfileSet, "Script.ScopeProfileSet", localization),
             new(ScriptScope.Global, "Script.ScopeGlobal", localization),
         ];
+        AttachedScripts = [];
         LibraryScripts = [];
-        SelectAssignmentCommand = new RelayCommand(SelectAssignment);
+        NewAssignmentCommand = new RelayCommand(NewAssignment);
+        DeleteAssignmentCommand = new RelayCommand(DeleteAssignment);
         NewScriptCommand = new RelayCommand(CreateScript);
         SaveScriptCommand = new RelayCommand(SaveSelectedLibrary);
         DeleteScriptCommand = new RelayCommand(DeleteSelectedLibrary);
@@ -515,13 +601,18 @@ internal sealed class ScriptManagerViewModel : WorkspaceViewModel, IDisposable
         CopyToTargetCommand = new AsyncRelayCommand(CopyToTargetAsync);
         DisableAssignmentCommand = new RelayCommand(DisableAssignment);
         RefreshLibrary();
-        LoadAssignment();
+        RefreshAssignments();
+        SelectDefaultAssignment();
         localization.CultureChanged += OnCultureChanged;
     }
 
     public IReadOnlyList<LocalizedOption<ScriptScope>> ScopeOptions { get; }
 
+    public ObservableCollection<ScriptAssignmentItemViewModel> AttachedScripts { get; }
+
     public ObservableCollection<ScriptLibraryItemViewModel> LibraryScripts { get; }
+
+    public bool HasAttachedScripts => AttachedScripts.Count > 0;
 
     public bool HasLibraryScripts => LibraryScripts.Count > 0;
 
@@ -537,7 +628,8 @@ internal sealed class ScriptManagerViewModel : WorkspaceViewModel, IDisposable
                 OnPropertyChanged(nameof(IsProfileSetScope));
                 OnPropertyChanged(nameof(IsGlobalScope));
                 RefreshLibrary();
-                SelectAssignment();
+                RefreshAssignments();
+                SelectDefaultAssignment();
             }
         }
     }
@@ -597,18 +689,39 @@ internal sealed class ScriptManagerViewModel : WorkspaceViewModel, IDisposable
         {
             if (value is not null && SetProperty(ref selectedLibrary, value))
             {
+                selectedAssignment = null;
+                creatingAssignment = false;
                 assignmentSelected = false;
+                OnPropertyChanged(nameof(SelectedAssignment));
                 LoadSelectedLibrary();
                 NotifyEditorMode();
             }
         }
     }
 
-    public bool IsAssignmentSelected => assignmentSelected;
+    public ScriptAssignmentItemViewModel? SelectedAssignment
+    {
+        get => selectedAssignment;
+        set
+        {
+            if (value is not null && SetProperty(ref selectedAssignment, value))
+            {
+                selectedLibrary = null;
+                creatingAssignment = false;
+                assignmentSelected = true;
+                OnPropertyChanged(nameof(SelectedLibrary));
+                LoadAssignment();
+                NotifyEditorMode();
+            }
+        }
+    }
+
+    public bool IsAssignmentSelected =>
+        assignmentSelected && (creatingAssignment || SelectedAssignment is not null);
 
     public bool IsLibrarySelected => !assignmentSelected && SelectedLibrary is not null;
 
-    public bool AssignmentHasScript => CurrentScript is not null;
+    public bool AssignmentHasScript => SelectedAssignment is not null;
 
     public bool AssignmentEnabled => CurrentScript?.Enabled == true;
 
@@ -669,7 +782,9 @@ internal sealed class ScriptManagerViewModel : WorkspaceViewModel, IDisposable
         }
     }
 
-    public IRelayCommand SelectAssignmentCommand { get; }
+    public IRelayCommand NewAssignmentCommand { get; }
+
+    public IRelayCommand DeleteAssignmentCommand { get; }
 
     public IRelayCommand NewScriptCommand { get; }
 
@@ -688,7 +803,8 @@ internal sealed class ScriptManagerViewModel : WorkspaceViewModel, IDisposable
     public void OpenProfileAssignment()
     {
         Scope = ScriptScope.Profile;
-        SelectAssignment();
+        RefreshAssignments();
+        SelectDefaultAssignment();
     }
 
     public void Dispose()
@@ -701,25 +817,60 @@ internal sealed class ScriptManagerViewModel : WorkspaceViewModel, IDisposable
         OnPropertyChanged(nameof(CurrentTargetName));
         OnPropertyChanged(nameof(AssignmentHasScript));
         OnPropertyChanged(nameof(AssignmentEnabled));
-        if (IsAssignmentSelected)
+        Guid? selectedId = SelectedAssignment?.Id;
+        RefreshAssignments(selectedId);
+        if (assignmentSelected)
         {
-            LoadAssignment();
+            if (selectedId.HasValue && SelectedAssignment is not null)
+            {
+                LoadAssignment();
+            }
+            else
+            {
+                SelectDefaultAssignment();
+            }
         }
     }
 
-    private void SelectAssignment()
+    private void SelectDefaultAssignment()
+    {
+        ScriptAssignmentItemViewModel? first = AttachedScripts.FirstOrDefault();
+        if (first is null)
+        {
+            NewAssignment();
+            return;
+        }
+
+        selectedAssignment = null;
+        SelectedAssignment = first;
+    }
+
+    private void NewAssignment()
     {
         selectedLibrary = null;
+        selectedAssignment = null;
         assignmentSelected = true;
+        creatingAssignment = true;
+        name = GetNewAssignmentName();
+        source = NewScriptTemplate;
+        ClearStatus();
         OnPropertyChanged(nameof(SelectedLibrary));
-        LoadAssignment();
+        OnPropertyChanged(nameof(SelectedAssignment));
+        OnPropertyChanged(nameof(Name));
+        OnPropertyChanged(nameof(Source));
         NotifyEditorMode();
     }
 
     private void LoadAssignment()
     {
         ScriptConfiguration? script = CurrentScript;
-        name = CurrentTargetName;
+        if (script is null)
+        {
+            NewAssignment();
+            return;
+        }
+
+        name = script.Name;
         source = script?.Source ?? string.Empty;
         ClearStatus();
         OnPropertyChanged(nameof(Name));
@@ -736,7 +887,7 @@ internal sealed class ScriptManagerViewModel : WorkspaceViewModel, IDisposable
             : allScripts.FirstOrDefault(item => item.Id == SelectedLibrary.Id);
         if (script is null)
         {
-            SelectAssignment();
+            SelectDefaultAssignment();
             return;
         }
 
@@ -821,7 +972,7 @@ internal sealed class ScriptManagerViewModel : WorkspaceViewModel, IDisposable
         }
 
         RefreshLibrary();
-        SelectAssignment();
+        SelectDefaultAssignment();
         SetStatus(localization["Script.LibraryDeleted"], error: false);
     }
 
@@ -835,7 +986,7 @@ internal sealed class ScriptManagerViewModel : WorkspaceViewModel, IDisposable
 
         var script = new ScriptLibraryEntry(
             Guid.NewGuid(),
-            CurrentTargetName,
+            string.IsNullOrWhiteSpace(Name) ? CurrentTargetName : Name.Trim(),
             Scope,
             Source);
         allScripts.Add(script);
@@ -884,7 +1035,7 @@ internal sealed class ScriptManagerViewModel : WorkspaceViewModel, IDisposable
         }
 
         ScriptTarget target = CurrentTarget;
-        ScriptConfiguration? existing = CurrentScript;
+        ScriptConfiguration? existing = IsAssignmentSelected ? CurrentScript : null;
         IsBusy = true;
         ClearStatus();
         try
@@ -895,6 +1046,12 @@ internal sealed class ScriptManagerViewModel : WorkspaceViewModel, IDisposable
                     target.Scope,
                     scriptSource,
                     existing);
+            Guid scriptId = existing?.Id ?? Guid.NewGuid();
+            configuration = configuration with
+            {
+                Id = scriptId,
+                Name = string.IsNullOrWhiteSpace(Name) ? GetNewAssignmentName() : Name.Trim(),
+            };
             bool applied = Workspace.UpdateDocument(document =>
                 ApplyConfiguration(document, target, configuration));
             if (!applied)
@@ -902,10 +1059,9 @@ internal sealed class ScriptManagerViewModel : WorkspaceViewModel, IDisposable
                 throw new InvalidOperationException(localization["Script.ConfigurationRejected"]);
             }
 
-            if (IsAssignmentSelected)
-            {
-                LoadAssignment();
-            }
+            RefreshAssignments(scriptId);
+            selectedAssignment = null;
+            SelectedAssignment = AttachedScripts.First(item => item.Id == scriptId);
             SetStatus(successMessage, error: false);
         }
         catch (Exception exception) when (
@@ -940,10 +1096,26 @@ internal sealed class ScriptManagerViewModel : WorkspaceViewModel, IDisposable
                 document,
                 target,
                 current with { Enabled = false },
-                enableProfileControl: false);
+                activateProfileControl: false);
         });
+        RefreshAssignments(SelectedAssignment?.Id);
         LoadAssignment();
         SetStatus(localization["Script.AssignmentDisabled"], error: false);
+    }
+
+    private void DeleteAssignment()
+    {
+        if (SelectedAssignment is null)
+        {
+            return;
+        }
+
+        ScriptTarget target = CurrentTarget;
+        Guid scriptId = SelectedAssignment.Id;
+        Workspace.UpdateDocument(document => RemoveConfiguration(document, target, scriptId));
+        RefreshAssignments();
+        SelectDefaultAssignment();
+        SetStatus(localization["Script.AssignmentRemoved"], error: false);
     }
 
     private bool TrySaveLibrary()
@@ -984,6 +1156,21 @@ internal sealed class ScriptManagerViewModel : WorkspaceViewModel, IDisposable
         }
     }
 
+    private void RefreshAssignments(Guid? selectedId = null)
+    {
+        AttachedScripts.Clear();
+        foreach (ScriptConfiguration script in CurrentScripts)
+        {
+            AttachedScripts.Add(new(script));
+        }
+        OnPropertyChanged(nameof(HasAttachedScripts));
+
+        selectedAssignment = selectedId.HasValue
+            ? AttachedScripts.FirstOrDefault(script => script.Id == selectedId.Value)
+            : null;
+        OnPropertyChanged(nameof(SelectedAssignment));
+    }
+
     private void NotifyEditorMode()
     {
         OnPropertyChanged(nameof(IsAssignmentSelected));
@@ -1009,18 +1196,21 @@ internal sealed class ScriptManagerViewModel : WorkspaceViewModel, IDisposable
         OnPropertyChanged(nameof(CurrentTargetName));
         if (IsAssignmentSelected)
         {
-            name = CurrentTargetName;
-            OnPropertyChanged(nameof(Name));
+            OnPropertyChanged(nameof(CurrentTargetName));
         }
     }
 
-    private ScriptConfiguration? CurrentScript => Scope switch
+    private ScriptConfiguration[] CurrentScripts => Scope switch
     {
-        ScriptScope.Profile => Workspace.SelectedProfile.Script,
-        ScriptScope.ProfileSet => Workspace.SelectedProfileSet?.Script,
-        ScriptScope.Global => Workspace.Document.GlobalScript,
-        _ => null,
+        ScriptScope.Profile => Workspace.SelectedProfile.Scripts,
+        ScriptScope.ProfileSet => Workspace.SelectedProfileSet?.Scripts ?? [],
+        ScriptScope.Global => Workspace.Document.GlobalScripts,
+        _ => [],
     };
+
+    private ScriptConfiguration? CurrentScript => SelectedAssignment is null
+        ? null
+        : CurrentScripts.FirstOrDefault(script => script.Id == SelectedAssignment.Id);
 
     private ScriptTarget CurrentTarget => new(
         Scope,
@@ -1030,13 +1220,74 @@ internal sealed class ScriptManagerViewModel : WorkspaceViewModel, IDisposable
             ScriptScope.ProfileSet => Workspace.SelectedProfileSetId,
             ScriptScope.Global => Guid.Empty,
             _ => Guid.Empty,
-        });
+        },
+        SelectedAssignment?.Id ?? Guid.Empty);
 
     private static ConfigurationDocument ApplyConfiguration(
         ConfigurationDocument document,
         ScriptTarget target,
         ScriptConfiguration configuration,
-        bool enableProfileControl = true) =>
+        bool activateProfileControl = true) =>
+        target.Scope switch
+        {
+            ScriptScope.Profile => document with
+            {
+                Profiles = document.Profiles.Select(profile =>
+                    profile.Id == target.TargetId
+                        ? ApplyProfileConfiguration(profile, configuration, activateProfileControl)
+                        : profile).ToArray(),
+            },
+            ScriptScope.ProfileSet => document with
+            {
+                ProfileSets = document.ProfileSets.Select(profileSet =>
+                    profileSet.Id == target.TargetId
+                        ? profileSet with { Scripts = Upsert(profileSet.Scripts, configuration) }
+                        : profileSet).ToArray(),
+            },
+            ScriptScope.Global => document with
+            {
+                GlobalScripts = Upsert(document.GlobalScripts, configuration),
+            },
+            _ => document,
+        };
+
+    private static Profile ApplyProfileConfiguration(
+        Profile profile,
+        ScriptConfiguration configuration,
+        bool activateProfileControl)
+    {
+        ScriptConfiguration[] scripts = Upsert(profile.Scripts, configuration);
+        return profile with
+        {
+            Scripts = scripts,
+            ControlMode = scripts.Any(script => script.Enabled)
+                ? activateProfileControl
+                    ? DisplayControlMode.Lua
+                    : profile.ControlMode
+                : DisplayControlMode.Basic,
+        };
+    }
+
+    private static ScriptConfiguration? FindScript(
+        ConfigurationDocument document,
+        ScriptTarget target) =>
+        target.Scope switch
+        {
+            ScriptScope.Profile => document.Profiles
+                .FirstOrDefault(profile => profile.Id == target.TargetId)?.Scripts
+                .FirstOrDefault(script => script.Id == target.ScriptId),
+            ScriptScope.ProfileSet => document.ProfileSets
+                .FirstOrDefault(profileSet => profileSet.Id == target.TargetId)?.Scripts
+                .FirstOrDefault(script => script.Id == target.ScriptId),
+            ScriptScope.Global => document.GlobalScripts
+                .FirstOrDefault(script => script.Id == target.ScriptId),
+            _ => null,
+        };
+
+    private static ConfigurationDocument RemoveConfiguration(
+        ConfigurationDocument document,
+        ScriptTarget target,
+        Guid scriptId) =>
         target.Scope switch
         {
             ScriptScope.Profile => document with
@@ -1045,10 +1296,10 @@ internal sealed class ScriptManagerViewModel : WorkspaceViewModel, IDisposable
                     profile.Id == target.TargetId
                         ? profile with
                         {
-                            ControlMode = enableProfileControl
-                                ? DisplayControlMode.Lua
+                            Scripts = profile.Scripts.Where(script => script.Id != scriptId).ToArray(),
+                            ControlMode = profile.Scripts.Any(script => script.Id != scriptId && script.Enabled)
+                                ? profile.ControlMode
                                 : DisplayControlMode.Basic,
-                            Script = configuration,
                         }
                         : profile).ToArray(),
             },
@@ -1056,29 +1307,51 @@ internal sealed class ScriptManagerViewModel : WorkspaceViewModel, IDisposable
             {
                 ProfileSets = document.ProfileSets.Select(profileSet =>
                     profileSet.Id == target.TargetId
-                        ? profileSet with { Script = configuration }
+                        ? profileSet with
+                        {
+                            Scripts = profileSet.Scripts.Where(script => script.Id != scriptId).ToArray(),
+                        }
                         : profileSet).ToArray(),
             },
-            ScriptScope.Global => document with { GlobalScript = configuration },
+            ScriptScope.Global => document with
+            {
+                GlobalScripts = document.GlobalScripts.Where(script => script.Id != scriptId).ToArray(),
+            },
             _ => document,
         };
 
-    private static ScriptConfiguration? FindScript(
-        ConfigurationDocument document,
-        ScriptTarget target) =>
-        target.Scope switch
+    private static ScriptConfiguration[] Upsert(
+        ScriptConfiguration[] scripts,
+        ScriptConfiguration configuration)
+    {
+        int index = Array.FindIndex(scripts, script => script.Id == configuration.Id);
+        if (index < 0)
         {
-            ScriptScope.Profile => document.Profiles
-                .FirstOrDefault(profile => profile.Id == target.TargetId)?.Script,
-            ScriptScope.ProfileSet => document.ProfileSets
-                .FirstOrDefault(profileSet => profileSet.Id == target.TargetId)?.Script,
-            ScriptScope.Global => document.GlobalScript,
-            _ => null,
-        };
+            return [.. scripts, configuration];
+        }
+
+        ScriptConfiguration[] result = scripts.ToArray();
+        result[index] = configuration;
+        return result;
+    }
+
+    private string GetNewAssignmentName()
+    {
+        string baseName = localization["Script.NewScript"];
+        string candidate = baseName;
+        int suffix = 2;
+        while (CurrentScripts.Any(script =>
+            string.Equals(script.Name, candidate, StringComparison.OrdinalIgnoreCase)))
+        {
+            candidate = $"{baseName} {suffix++}";
+        }
+        return candidate;
+    }
 
     private readonly record struct ScriptTarget(
         ScriptScope Scope,
-        Guid TargetId);
+        Guid TargetId,
+        Guid ScriptId = default);
 }
 
 internal static class ScriptConfigurationComposer

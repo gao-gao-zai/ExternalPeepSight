@@ -420,7 +420,9 @@ public sealed record ScriptConfiguration(
     string SourceHash,
     ScriptBindingSlot[] Bindings,
     ScriptSetting[] Settings,
-    ScriptUiLayout? Ui = null);
+    ScriptUiLayout? Ui = null,
+    Guid Id = default,
+    string Name = "");
 
 /// <summary>
 /// Defines both logical switches, their hotkeys, and their visibility rule.
@@ -447,25 +449,195 @@ public sealed record ToastConfiguration(
 /// <summary>
 /// Defines one saved configuration.
 /// </summary>
-public sealed record Profile(
-    Guid Id,
-    string Name,
-    OverlayMode ActiveMode,
-    Crosshair Crosshair,
-    ImageOverlay Image,
-    SwitchConfiguration Switches,
-    DisplayControlMode ControlMode = DisplayControlMode.Basic,
-    ScriptConfiguration? Script = null);
+public sealed record Profile
+{
+    /// <summary>
+    /// Initializes a profile without or with one compatibility script assignment.
+    /// </summary>
+    public Profile(
+        Guid id,
+        string name,
+        OverlayMode activeMode,
+        Crosshair crosshair,
+        ImageOverlay image,
+        SwitchConfiguration switches,
+        DisplayControlMode controlMode = DisplayControlMode.Basic,
+        ScriptConfiguration? script = null)
+    {
+        Id = id;
+        Name = name;
+        ActiveMode = activeMode;
+        Crosshair = crosshair;
+        Image = image;
+        Switches = switches;
+        ControlMode = controlMode;
+        Scripts = script is null ? [] : [EnsureScriptIdentity(script, name)];
+    }
+
+    /// <summary>
+    /// Initializes a profile with an ordered script stack.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonConstructor]
+    public Profile(
+        Guid id,
+        string name,
+        OverlayMode activeMode,
+        Crosshair crosshair,
+        ImageOverlay image,
+        SwitchConfiguration switches,
+        DisplayControlMode controlMode,
+        ScriptConfiguration[] scripts)
+    {
+        Id = id;
+        Name = name;
+        ActiveMode = activeMode;
+        Crosshair = crosshair;
+        Image = image;
+        Switches = switches;
+        ControlMode = controlMode;
+        Scripts = scripts;
+    }
+
+    /// <summary>
+    /// Gets the stable profile identifier.
+    /// </summary>
+    public Guid Id { get; init; }
+
+    /// <summary>
+    /// Gets the user-visible profile name.
+    /// </summary>
+    public string Name { get; init; }
+
+    /// <summary>
+    /// Gets the active overlay mode.
+    /// </summary>
+    public OverlayMode ActiveMode { get; init; }
+
+    /// <summary>
+    /// Gets the crosshair configuration.
+    /// </summary>
+    public Crosshair Crosshair { get; init; }
+
+    /// <summary>
+    /// Gets the image overlay configuration.
+    /// </summary>
+    public ImageOverlay Image { get; init; }
+
+    /// <summary>
+    /// Gets the logical switch configuration.
+    /// </summary>
+    public SwitchConfiguration Switches { get; init; }
+
+    /// <summary>
+    /// Gets the visibility control mode.
+    /// </summary>
+    public DisplayControlMode ControlMode { get; init; }
+
+    /// <summary>
+    /// Gets the ordered profile-level script stack.
+    /// </summary>
+    public ScriptConfiguration[] Scripts { get; init; } = [];
+
+    /// <summary>
+    /// Gets or replaces the first script for compatibility with single-script callers.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public ScriptConfiguration? Script
+    {
+        get => Scripts?.FirstOrDefault();
+        init => Scripts = value is null ? [] : [EnsureScriptIdentity(value, Name)];
+    }
+
+    private static ScriptConfiguration EnsureScriptIdentity(ScriptConfiguration script, string fallbackName) =>
+        script with
+        {
+            Id = script.Id == Guid.Empty ? Guid.NewGuid() : script.Id,
+            Name = string.IsNullOrWhiteSpace(script.Name) ? fallbackName : script.Name,
+        };
+}
 
 /// <summary>
 /// Defines an ordered group of profiles.
 /// </summary>
-public sealed record ProfileSet(
-    Guid Id,
-    string Name,
-    Guid[] ProfileIds,
-    Guid? SelectedProfileId,
-    ScriptConfiguration? Script = null);
+public sealed record ProfileSet
+{
+    /// <summary>
+    /// Initializes a profile set without or with one compatibility script assignment.
+    /// </summary>
+    public ProfileSet(
+        Guid id,
+        string name,
+        Guid[] profileIds,
+        Guid? selectedProfileId,
+        ScriptConfiguration? script = null)
+    {
+        Id = id;
+        Name = name;
+        ProfileIds = profileIds;
+        SelectedProfileId = selectedProfileId;
+        Scripts = script is null ? [] : [EnsureScriptIdentity(script, name)];
+    }
+
+    /// <summary>
+    /// Initializes a profile set with an ordered script stack.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonConstructor]
+    public ProfileSet(
+        Guid id,
+        string name,
+        Guid[] profileIds,
+        Guid? selectedProfileId,
+        ScriptConfiguration[] scripts)
+    {
+        Id = id;
+        Name = name;
+        ProfileIds = profileIds;
+        SelectedProfileId = selectedProfileId;
+        Scripts = scripts;
+    }
+
+    /// <summary>
+    /// Gets the stable profile-set identifier.
+    /// </summary>
+    public Guid Id { get; init; }
+
+    /// <summary>
+    /// Gets the user-visible profile-set name.
+    /// </summary>
+    public string Name { get; init; }
+
+    /// <summary>
+    /// Gets the ordered member profile identifiers.
+    /// </summary>
+    public Guid[] ProfileIds { get; init; }
+
+    /// <summary>
+    /// Gets the selected member profile identifier.
+    /// </summary>
+    public Guid? SelectedProfileId { get; init; }
+
+    /// <summary>
+    /// Gets the ordered profile-set-level script stack.
+    /// </summary>
+    public ScriptConfiguration[] Scripts { get; init; } = [];
+
+    /// <summary>
+    /// Gets or replaces the first script for compatibility with single-script callers.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public ScriptConfiguration? Script
+    {
+        get => Scripts?.FirstOrDefault();
+        init => Scripts = value is null ? [] : [EnsureScriptIdentity(value, Name)];
+    }
+
+    private static ScriptConfiguration EnsureScriptIdentity(ScriptConfiguration script, string fallbackName) =>
+        script with
+        {
+            Id = script.Id == Guid.Empty ? Guid.NewGuid() : script.Id,
+            Name = string.IsNullOrWhiteSpace(script.Name) ? fallbackName : script.Name,
+        };
+}
 
 /// <summary>
 /// Defines the versioned on-disk application state document.
@@ -515,9 +687,28 @@ public sealed record ConfigurationDocument
         new(true, ToastPosition.TopCenter, 1500, "Segoe UI", 18, RgbaColor.White, new RgbaColor(0, 0, 0, 180));
 
     /// <summary>
-    /// Gets the optional enabled global Lua script.
+    /// Gets the ordered global Lua script stack.
     /// </summary>
-    public ScriptConfiguration? GlobalScript { get; init; }
+    public ScriptConfiguration[] GlobalScripts { get; init; } = [];
+
+    /// <summary>
+    /// Gets or replaces the first global script for compatibility with single-script callers.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public ScriptConfiguration? GlobalScript
+    {
+        get => GlobalScripts?.FirstOrDefault();
+        init => GlobalScripts = value is null
+            ? []
+            :
+            [
+                value with
+                {
+                    Id = value.Id == Guid.Empty ? Guid.NewGuid() : value.Id,
+                    Name = string.IsNullOrWhiteSpace(value.Name) ? "Global" : value.Name,
+                },
+            ];
+    }
 }
 
 /// <summary>

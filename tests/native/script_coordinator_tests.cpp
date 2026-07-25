@@ -9,12 +9,27 @@ namespace
 {
 [[nodiscard]] std::string snapshot_with_script(const std::string_view source, const std::string_view source_hash)
 {
-    return "{\"schemaVersion\":8,\"activeProfileSetId\":\"set-a\",\"globalScript\":null,"
-           "\"profileSets\":[{\"id\":\"set-a\",\"selectedProfileId\":\"profile-a\",\"script\":null}],"
-           "\"profiles\":[{\"id\":\"profile-a\",\"controlMode\":\"lua\",\"script\":{"
-           "\"enabled\":true,\"apiVersion\":\"1\",\"source\":\"" +
+    return "{\"schemaVersion\":9,\"activeProfileSetId\":\"set-a\",\"globalScripts\":[],"
+           "\"profileSets\":[{\"id\":\"set-a\",\"selectedProfileId\":\"profile-a\",\"scripts\":[]}],"
+           "\"profiles\":[{\"id\":\"profile-a\",\"controlMode\":\"lua\",\"scripts\":[{"
+           "\"id\":\"script-a\",\"name\":\"Script A\",\"enabled\":true,\"apiVersion\":\"1\",\"source\":\"" +
            std::string(source) + "\",\"sourceHash\":\"" + std::string(source_hash) +
-           "\",\"bindings\":[],\"settings\":[],\"ui\":null}}]}";
+           "\",\"bindings\":[],\"settings\":[],\"ui\":null}]}]}";
+}
+
+[[nodiscard]] std::string snapshot_with_two_profile_scripts()
+{
+    return R"({"schemaVersion":9,"activeProfileSetId":"set-a","globalScripts":[],)"
+           R"("profileSets":[{"id":"set-a","selectedProfileId":"profile-a","scripts":[]}],)"
+           R"("profiles":[{"id":"profile-a","controlMode":"lua","scripts":[)"
+           R"({"id":"script-visible","name":"Visible","enabled":true,"apiVersion":"1",)"
+           R"("source":"return eps.script { on_start=function(ctx) ctx.visibility:set(true) end }",)"
+           R"("sourceHash":"294993C7AFDC03D5A1BF74287B9BF147EA726F9F617D0C34E87E49D196AD4030",)"
+           R"("bindings":[],"settings":[],"ui":null},)"
+           R"({"id":"script-hidden","name":"Hidden","enabled":true,"apiVersion":"1",)"
+           R"("source":"return eps.script { on_start=function(ctx) ctx.visibility:set(false) end }",)"
+           R"("sourceHash":"964C6FC90B7C28631B817F76CA5F2E18C87BA5E02D2C09F3C6D84E85B462361C",)"
+           R"("bindings":[],"settings":[],"ui":null}]}]})";
 }
 
 TEST(ScriptCoordinator, PreparesCommitsAndPublishesRuntimeVisibility)
@@ -46,6 +61,19 @@ TEST(ScriptCoordinator, RejectsSourceHashMismatchWithoutReplacingRuntime)
                  std::invalid_argument);
 
     coordinator.stop();
+}
+
+TEST(ScriptCoordinator, CombinesMultipleScriptsWithinTheSameScope)
+{
+    external_peepsight::ScriptCoordinator coordinator([](external_peepsight::ScriptRuntimeUpdate) {});
+    coordinator.start();
+
+    const auto prepared = coordinator.prepare(snapshot_with_two_profile_scripts());
+
+    coordinator.stop();
+
+    EXPECT_TRUE(prepared.profile_uses_lua);
+    EXPECT_FALSE(prepared.allows_visible);
 }
 
 TEST(ScriptCoordinator, ValidatesAndSerializesTrustedUiDeclarations)

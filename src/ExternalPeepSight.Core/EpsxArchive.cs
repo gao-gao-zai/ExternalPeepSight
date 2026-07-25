@@ -2,6 +2,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace ExternalPeepSight.Core;
 
@@ -60,6 +61,7 @@ public static class EpsxArchive
 {
     private const string ManifestEntryName = "manifest.json";
     private const string ProfilesEntryName = "profiles.json";
+    private const int LegacyScriptStackSchemaVersion = 8;
 
     /// <summary>
     /// Exports portable profiles, profile sets, and their resources to an EPSX stream.
@@ -145,7 +147,9 @@ public static class EpsxArchive
             throw new ConfigurationFormatException("EPSX package is missing profiles.json.");
         }
 
-        PortableConfigurationDocument portable = DeserializePortableDocument(documentBytes);
+        PortableConfigurationDocument portable = DeserializePortableDocument(
+            documentBytes,
+            manifest.SchemaVersion);
         ProfileSet[] importedProfileSets = portable.ProfileSets
             ?? throw new ConfigurationFormatException("EPSX profiles.json requires profileSets.");
         ConfigurationDocument imported = existing with
@@ -223,7 +227,7 @@ public static class EpsxArchive
                     manifestBytes,
                     CreateJsonOptions(false))
                 ?? throw new ConfigurationFormatException("EPSX manifest is empty.");
-            if (manifest.SchemaVersion != ConfigurationJson.CurrentSchemaVersion ||
+            if (!IsSupportedSchemaVersion(manifest.SchemaVersion) ||
                 manifest.Assets is null)
             {
                 throw new ConfigurationFormatException("EPSX manifest schema is unsupported.");
@@ -237,18 +241,35 @@ public static class EpsxArchive
         }
     }
 
-    private static PortableConfigurationDocument DeserializePortableDocument(byte[] documentBytes)
+    private static PortableConfigurationDocument DeserializePortableDocument(
+        byte[] documentBytes,
+        int manifestSchemaVersion)
     {
         try
         {
-            PortableConfigurationDocument document =
-                ConfigurationJson.DeserializeCanonical<PortableConfigurationDocument>(documentBytes)
-                ?? throw new ConfigurationFormatException("EPSX profiles.json is empty.");
-            if (document.SchemaVersion != ConfigurationJson.CurrentSchemaVersion)
+            JsonObject root = JsonNode.Parse(
+                    documentBytes,
+                    new JsonNodeOptions { PropertyNameCaseInsensitive = false },
+                    new JsonDocumentOptions
+                    {
+                        AllowTrailingCommas = false,
+                        CommentHandling = JsonCommentHandling.Disallow,
+                        MaxDepth = 64,
+                    }) as JsonObject
+                ?? throw new ConfigurationFormatException("EPSX profiles.json root must be an object.");
+            ValidatePortableRootProperties(root);
+            int schemaVersion = ConfigurationJson.GetSchemaVersion(root);
+            if (schemaVersion != manifestSchemaVersion || !IsSupportedSchemaVersion(schemaVersion))
             {
                 throw new ConfigurationFormatException("EPSX profiles.json schema is unsupported.");
             }
 
+            JsonObject migrated = schemaVersion == LegacyScriptStackSchemaVersion
+                ? ConfigurationJson.MigratePortableVersionEight(root)
+                : root;
+            PortableConfigurationDocument document =
+                ConfigurationJson.DeserializeCanonical<PortableConfigurationDocument>(migrated)
+                ?? throw new ConfigurationFormatException("EPSX profiles.json is empty.");
             if (document.Profiles is null || document.ProfileSets is null || document.Assets is null)
             {
                 throw new ConfigurationFormatException("EPSX profiles.json requires profiles, profileSets, and assets.");
@@ -267,6 +288,21 @@ public static class EpsxArchive
         catch (NotSupportedException exception)
         {
             throw new ConfigurationFormatException("EPSX profiles.json contains an unsupported value.", exception);
+        }
+    }
+
+    private static bool IsSupportedSchemaVersion(int schemaVersion) =>
+        schemaVersion is LegacyScriptStackSchemaVersion or ConfigurationJson.CurrentSchemaVersion;
+
+    private static void ValidatePortableRootProperties(JsonObject root)
+    {
+        foreach ((string propertyName, _) in root)
+        {
+            if (propertyName is not ("schemaVersion" or "profiles" or "profileSets" or "assets"))
+            {
+                throw new ConfigurationFormatException(
+                    $"EPSX profiles.json contains unsupported property '{propertyName}'.");
+            }
         }
     }
 

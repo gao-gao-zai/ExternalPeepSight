@@ -311,8 +311,46 @@ public sealed class ConfigurationValidationTests
             ConfigurationValidator.Validate(seed with { Profiles = [profile] });
 
         Assert.Contains(result.Issues, issue =>
-            issue.Path == "$.profiles[0].script" &&
+            issue.Path == "$.profiles[0].scripts" &&
             issue.Message.Contains("enabled", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ScriptStacksRequireBoundedUniqueNamedEntries()
+    {
+        ConfigurationDocument seed = ConfigurationDefaults.Create();
+        ScriptConfiguration valid = CreateEnabledScript(
+            new KeyIdentity(InputDeviceKind.Keyboard, 30, false, KeyModifiers.None)) with
+        {
+            Id = Guid.NewGuid(),
+            Name = "First",
+        };
+        ConfigurationValidationResult nullCollection = ConfigurationValidator.Validate(
+            seed with { GlobalScripts = null! });
+        ConfigurationValidationResult tooMany = ConfigurationValidator.Validate(
+            seed with { GlobalScripts = Enumerable.Repeat(valid, 17).ToArray() });
+        ConfigurationValidationResult malformed = ConfigurationValidator.Validate(
+            seed with
+            {
+                GlobalScripts =
+                [
+                    null!,
+                    valid,
+                    valid with { Name = " " },
+                    valid with { Id = Guid.Empty, Name = "Empty identifier" },
+                ],
+            });
+
+        Assert.Contains(nullCollection.Issues, issue =>
+            issue.Path == "$.globalScripts" &&
+            issue.Message.Contains("required", StringComparison.Ordinal));
+        Assert.Contains(tooMany.Issues, issue =>
+            issue.Path == "$.globalScripts" &&
+            issue.Message.Contains("count", StringComparison.Ordinal));
+        Assert.Contains(malformed.Issues, issue => issue.Path == "$.globalScripts[0]");
+        Assert.Contains(malformed.Issues, issue => issue.Path == "$.globalScripts[2].id");
+        Assert.Contains(malformed.Issues, issue => issue.Path == "$.globalScripts[2].name");
+        Assert.Contains(malformed.Issues, issue => issue.Path == "$.globalScripts[3].id");
     }
 
     [Fact]
@@ -439,14 +477,14 @@ public sealed class ConfigurationValidationTests
         ConfigurationValidationResult result = ConfigurationValidator.Validate(
             seed with { GlobalScript = script });
 
-        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.ui");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScripts[0].ui");
         Assert.Contains(result.Issues, issue => issue.Path.EndsWith(".columns", StringComparison.Ordinal));
         Assert.Contains(result.Issues, issue => issue.Path.EndsWith(".control", StringComparison.Ordinal));
         Assert.Contains(result.Issues, issue => issue.Path.EndsWith(".step", StringComparison.Ordinal));
         Assert.Contains(result.Issues, issue =>
             issue.Path.EndsWith(".visibleWhen.settingId", StringComparison.Ordinal));
         Assert.Contains(result.Issues, issue =>
-            issue.Path == "$.globalScript.ui.sections" &&
+            issue.Path == "$.globalScripts[0].ui.sections" &&
             issue.Message.Contains("every declared setting", StringComparison.Ordinal));
     }
 
@@ -491,15 +529,15 @@ public sealed class ConfigurationValidationTests
                 GlobalScript = script,
             });
 
-        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.apiVersion");
-        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.source");
-        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.sourceHash");
-        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.bindings[0]");
-        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.bindings[1].id");
-        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.bindings[1].key.device");
-        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.bindings[2].displayName");
-        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.bindings[3].id");
-        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.bindings[3].key");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScripts[0].apiVersion");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScripts[0].source");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScripts[0].sourceHash");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScripts[0].bindings[0]");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScripts[0].bindings[1].id");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScripts[0].bindings[1].key.device");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScripts[0].bindings[2].displayName");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScripts[0].bindings[3].id");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScripts[0].bindings[3].key");
     }
 
     [Fact]
@@ -534,19 +572,19 @@ public sealed class ConfigurationValidationTests
                 GlobalScript = script,
             });
 
-        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[0]");
-        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[1].type");
-        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[2].value");
-        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[3].value");
-        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[4]");
-        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[5].value");
-        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[6].value");
-        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[7].options");
-        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[8].options");
-        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[9].options");
-        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[10].value");
-        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[11].value");
-        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScript.settings[12].value");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScripts[0].settings[0]");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScripts[0].settings[1].type");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScripts[0].settings[2].value");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScripts[0].settings[3].value");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScripts[0].settings[4]");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScripts[0].settings[5].value");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScripts[0].settings[6].value");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScripts[0].settings[7].options");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScripts[0].settings[8].options");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScripts[0].settings[9].options");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScripts[0].settings[10].value");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScripts[0].settings[11].value");
+        Assert.Contains(result.Issues, issue => issue.Path == "$.globalScripts[0].settings[12].value");
     }
 
     [Fact]
@@ -579,10 +617,10 @@ public sealed class ConfigurationValidationTests
                 GlobalScript = nullCollections,
             });
 
-        Assert.Contains(tooManyResult.Issues, issue => issue.Path == "$.globalScript.bindings");
-        Assert.Contains(tooManyResult.Issues, issue => issue.Path == "$.globalScript.settings");
-        Assert.Contains(nullResult.Issues, issue => issue.Path == "$.globalScript.bindings");
-        Assert.Contains(nullResult.Issues, issue => issue.Path == "$.globalScript.settings");
+        Assert.Contains(tooManyResult.Issues, issue => issue.Path == "$.globalScripts[0].bindings");
+        Assert.Contains(tooManyResult.Issues, issue => issue.Path == "$.globalScripts[0].settings");
+        Assert.Contains(nullResult.Issues, issue => issue.Path == "$.globalScripts[0].bindings");
+        Assert.Contains(nullResult.Issues, issue => issue.Path == "$.globalScripts[0].settings");
     }
 
     [Fact]
@@ -618,6 +656,35 @@ public sealed class ConfigurationValidationTests
             });
 
         Assert.True(result.Issues.Count(issue => issue.Message.Contains("Input binding duplicates", StringComparison.Ordinal)) >= 3);
+    }
+
+    [Fact]
+    public void ScriptsInTheSameScopeCannotReuseInputKeys()
+    {
+        ConfigurationDocument seed = ConfigurationDefaults.Create();
+        KeyIdentity key = new(InputDeviceKind.Keyboard, 30, false, KeyModifiers.Ctrl);
+        ScriptConfiguration first = CreateEnabledScript(key) with
+        {
+            Id = Guid.NewGuid(),
+            Name = "First",
+        };
+        ScriptConfiguration second = CreateEnabledScript(key) with
+        {
+            Id = Guid.NewGuid(),
+            Name = "Second",
+        };
+        Profile profile = seed.Profiles[0] with
+        {
+            ControlMode = DisplayControlMode.Lua,
+            Scripts = [first, second],
+        };
+
+        ConfigurationValidationResult result =
+            ConfigurationValidator.Validate(seed with { Profiles = [profile] });
+
+        Assert.Contains(
+            result.Issues,
+            issue => issue.Path == "$.profiles[active].scripts[1].bindings[0].key");
     }
 
     [Fact]

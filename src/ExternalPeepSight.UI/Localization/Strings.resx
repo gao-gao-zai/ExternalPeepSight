@@ -84,9 +84,9 @@
   <data name="Script.ValidationFailed" xml:space="preserve"><value>Script validation failed: {0}</value></data>
   <data name="Script.ConfigurationRejected" xml:space="preserve"><value>The validated script configuration was rejected.</value></data>
   <data name="Script.CurrentProfileAdvanced" xml:space="preserve"><value>Current profile advanced control</value></data>
-  <data name="Script.RuntimeConfigurationHint" xml:space="preserve"><value>Registered settings and input bindings take effect immediately.</value></data>
+  <data name="Script.RuntimeConfigurationHint" xml:space="preserve"><value>Each enabled script contributes its own settings, bindings, and visibility decision.</value></data>
   <data name="Script.OpenManager" xml:space="preserve"><value>Open script manager</value></data>
-  <data name="Script.NoProfileScript" xml:space="preserve"><value>No profile-level script is attached. Open script manager to create one or copy one from the library.</value></data>
+  <data name="Script.NoProfileScript" xml:space="preserve"><value>No profile-level scripts are attached. Open script manager to create one or copy one from the library.</value></data>
   <data name="Script.EnabledState" xml:space="preserve"><value>Enabled</value></data>
   <data name="Script.DisabledState" xml:space="preserve"><value>Disabled</value></data>
   <data name="Script.RegisteredSettings" xml:space="preserve"><value>Registered settings</value></data>
@@ -95,8 +95,9 @@
   <data name="Script.NoProfileSet" xml:space="preserve"><value>No profile set selected</value></data>
   <data name="Script.GlobalTarget" xml:space="preserve"><value>Application global</value></data>
   <data name="Script.CurrentTarget" xml:space="preserve"><value>Current target</value></data>
-  <data name="Script.AttachedScript" xml:space="preserve"><value>Attached script</value></data>
-  <data name="Script.NoAttachedScript" xml:space="preserve"><value>No script attached</value></data>
+  <data name="Script.AttachedScript" xml:space="preserve"><value>Attached scripts</value></data>
+  <data name="Script.NoAttachedScript" xml:space="preserve"><value>No scripts attached</value></data>
+  <data name="Script.AttachNew" xml:space="preserve"><value>Attach a new script</value></data>
   <data name="Script.Library" xml:space="preserve"><value>Independent script library</value></data>
   <data name="Script.LibraryEmpty" xml:space="preserve"><value>No scripts in this scope. Use the add button to create one.</value></data>
   <data name="Script.NewScript" xml:space="preserve"><value>New script</value></data>
@@ -111,6 +112,7 @@
   <data name="Script.AssignmentSavedToLibrary" xml:space="preserve"><value>The attached script was copied to the independent library.</value></data>
   <data name="Script.CopiedToTarget" xml:space="preserve"><value>The library script was validated and copied to the current target.</value></data>
   <data name="Script.AssignmentDisabled" xml:space="preserve"><value>The attached script was disabled.</value></data>
+  <data name="Script.AssignmentRemoved" xml:space="preserve"><value>The attached script was removed.</value></data>
   <data name="Script.LibrarySaveFailed" xml:space="preserve"><value>The script library could not be saved.</value></data>
   <data name="Image.Invalid" xml:space="preserve"><value>The selected image is not a supported PNG or static SVG.</value></data>
   <data name="Dialog.SelectImage" xml:space="preserve"><value>Select an image</value></data>

@@ -37,7 +37,7 @@ using winrt::Windows::Data::Json::JsonValueType;
 struct ParsedScript
 {
     ScriptScope scope;
-    std::string owner_id;
+    std::string script_id;
     std::string api_version;
     std::string source;
     std::vector<ScriptSettingValue> settings;
@@ -50,7 +50,7 @@ struct ParsedScript
 struct RuntimeScript
 {
     ScriptScope scope;
-    std::string owner_id;
+    std::string script_id;
     LuaScript script;
 };
 
@@ -60,9 +60,7 @@ struct RuntimeCandidate
     std::string profile_set_id;
     std::string profile_id;
     bool profile_uses_lua = false;
-    std::optional<RuntimeScript> global;
-    std::optional<RuntimeScript> profile_set;
-    std::optional<RuntimeScript> profile;
+    std::vector<RuntimeScript> scripts;
     std::vector<ScriptInputBinding> input_bindings;
 };
 
@@ -419,7 +417,7 @@ struct RuntimeCandidate
     return result;
 }
 
-[[nodiscard]] ParsedScript parse_script(const JsonObject &object, const ScriptScope scope, const std::string &owner_id)
+[[nodiscard]] ParsedScript parse_script(const JsonObject &object, const ScriptScope scope)
 {
     if (!object.GetNamedBoolean(L"enabled"))
     {
@@ -433,7 +431,7 @@ struct RuntimeCandidate
 
     ParsedScript result{
         scope,
-        owner_id,
+        winrt::to_string(object.GetNamedString(L"id")),
         api_version,
         winrt::to_string(object.GetNamedString(L"source")),
     };
@@ -490,7 +488,7 @@ struct RuntimeCandidate
             result.bindings.push_back({
                 parse_key(key.GetObject()),
                 scope,
-                owner_id,
+                result.script_id,
                 declaration.id,
                 declaration.pressed,
                 declaration.released,
@@ -532,20 +530,25 @@ void validate_declarations(const ParsedScript &parsed, const ScriptDeclarations 
     }
 }
 
-[[nodiscard]] std::optional<ParsedScript> optional_script(const JsonObject &owner, const std::wstring_view name,
-                                                          const ScriptScope scope, const std::string &owner_id)
+[[nodiscard]] std::vector<ParsedScript> parse_scripts(const JsonObject &owner, const std::wstring_view name,
+                                                      const ScriptScope scope)
 {
     const IJsonValue value = owner.GetNamedValue(name);
-    if (value.ValueType() == JsonValueType::Null)
+    if (value.ValueType() != JsonValueType::Array)
     {
-        return std::nullopt;
+        throw std::invalid_argument("Script configuration stack must be an array.");
     }
-    if (value.ValueType() != JsonValueType::Object)
+
+    std::vector<ParsedScript> result;
+    for (const IJsonValue &item : value.GetArray())
     {
-        throw std::invalid_argument("Script configuration must be an object or null.");
+        const JsonObject object = item.GetObject();
+        if (object.GetNamedBoolean(L"enabled"))
+        {
+            result.push_back(parse_script(object, scope));
+        }
     }
-    const JsonObject object = value.GetObject();
-    return object.GetNamedBoolean(L"enabled") ? std::optional(parse_script(object, scope, owner_id)) : std::nullopt;
+    return result;
 }
 
 [[nodiscard]] ScriptScope parse_scope(const std::wstring_view value)
@@ -746,13 +749,13 @@ void validate_declarations(const ParsedScript &parsed, const ScriptDeclarations 
     {
         throw std::invalid_argument("Script on_start cannot switch configurations.");
     }
-    return {parsed.scope, std::move(parsed.owner_id), std::move(script)};
+    return {parsed.scope, std::move(parsed.script_id), std::move(script)};
 }
 
 [[nodiscard]] RuntimeCandidate parse_candidate(const std::string_view snapshot_json, const std::uint64_t token)
 {
     const JsonObject root = JsonObject::Parse(winrt::to_hstring(snapshot_json));
-    if (root.GetNamedNumber(L"schemaVersion") != 8.0)
+    if (root.GetNamedNumber(L"schemaVersion") != 9.0)
     {
         throw std::invalid_argument("Script configuration schema version is not supported.");
     }
@@ -805,34 +808,33 @@ void validate_declarations(const ParsedScript &parsed, const ScriptDeclarations 
     result.profile_uses_lua = active_profile.GetNamedString(L"controlMode") == L"lua";
     const ScriptContext context{active_set_id, active_profile_id};
 
-    if (const auto parsed = optional_script(root, L"globalScript", ScriptScope::global, "global"))
+    const auto append_scripts = [&result, &context](std::vector<ParsedScript> scripts)
     {
-        result.input_bindings.insert(result.input_bindings.end(), parsed->bindings.begin(), parsed->bindings.end());
-        result.global = load_script(*parsed, context);
-    }
-    if (const auto parsed = optional_script(active_set, L"script", ScriptScope::profile_set, active_set_id))
-    {
-        result.input_bindings.insert(result.input_bindings.end(), parsed->bindings.begin(), parsed->bindings.end());
-        result.profile_set = load_script(*parsed, context);
-    }
+        for (ParsedScript &parsed : scripts)
+        {
+            result.input_bindings.insert(result.input_bindings.end(), parsed.bindings.begin(), parsed.bindings.end());
+            result.scripts.push_back(load_script(std::move(parsed), context));
+        }
+    };
+
+    append_scripts(parse_scripts(root, L"globalScripts", ScriptScope::global));
+    append_scripts(parse_scripts(active_set, L"scripts", ScriptScope::profile_set));
     if (result.profile_uses_lua)
     {
-        const auto parsed = optional_script(active_profile, L"script", ScriptScope::profile, active_profile_id);
-        if (!parsed)
+        std::vector<ParsedScript> profile_scripts = parse_scripts(active_profile, L"scripts", ScriptScope::profile);
+        if (profile_scripts.empty())
         {
             throw std::invalid_argument("Lua control mode requires an enabled profile script.");
         }
-        result.input_bindings.insert(result.input_bindings.end(), parsed->bindings.begin(), parsed->bindings.end());
-        result.profile = load_script(*parsed, context);
+        append_scripts(std::move(profile_scripts));
     }
     return result;
 }
 
 [[nodiscard]] bool combined_visibility(const RuntimeCandidate &runtime) noexcept
 {
-    return (!runtime.global || runtime.global->script.allows_visible()) &&
-           (!runtime.profile_set || runtime.profile_set->script.allows_visible()) &&
-           (!runtime.profile || runtime.profile->script.allows_visible());
+    return std::ranges::all_of(runtime.scripts,
+                               [](const RuntimeScript &script) { return script.script.allows_visible(); });
 }
 } // namespace
 
@@ -921,20 +923,10 @@ class ScriptCoordinator::Impl
                     return;
                 }
 
-                RuntimeScript *target = nullptr;
-                switch (event.scope)
-                {
-                case ScriptScope::global:
-                    target = active_->global ? &*active_->global : nullptr;
-                    break;
-                case ScriptScope::profile_set:
-                    target = active_->profile_set ? &*active_->profile_set : nullptr;
-                    break;
-                case ScriptScope::profile:
-                    target = active_->profile ? &*active_->profile : nullptr;
-                    break;
-                }
-                if (target == nullptr || target->owner_id != event.script_id)
+                const auto target = std::ranges::find_if(
+                    active_->scripts, [&event](const RuntimeScript &script)
+                    { return script.scope == event.scope && script.script_id == event.script_id; });
+                if (target == active_->scripts.end())
                 {
                     return;
                 }

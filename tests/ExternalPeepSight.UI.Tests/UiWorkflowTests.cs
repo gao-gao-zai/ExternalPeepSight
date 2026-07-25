@@ -125,6 +125,26 @@ public sealed class UiWorkflowTests
     }
 
     [Fact]
+    public async Task ScriptManagerAppendsMultipleScriptsToTheSameProfile()
+    {
+        using TestContext context = CreateContext();
+        ScriptManagerViewModel manager = context.ViewModel.Scripts;
+
+        manager.OpenProfileAssignment();
+        manager.Name = "First";
+        manager.Source = "return eps.script {}";
+        await manager.ValidateAndApplyCommand.ExecuteAsync(null);
+        context.ViewModel.Crosshair.Script.Bindings[0].Key = null;
+        manager.NewAssignmentCommand.Execute(null);
+        manager.Name = "Second";
+        manager.Source = "return eps.script {}";
+        await manager.ValidateAndApplyCommand.ExecuteAsync(null);
+
+        Assert.Equal(["First", "Second"], context.Workspace.SelectedProfile.Scripts.Select(script => script.Name));
+        Assert.Equal(2, context.ViewModel.Crosshair.Script.Scripts.Count);
+    }
+
+    [Fact]
     public async Task ScriptDefaultBindingDoesNotReplaceAUserClearedValue()
     {
         using TestContext context = CreateContext();
@@ -186,14 +206,19 @@ public sealed class UiWorkflowTests
         });
 
         ScriptAdvancedSummaryViewModel summary = context.ViewModel.Crosshair.Script;
+        ScriptAdvancedItemViewModel item = Assert.Single(summary.Scripts);
+        ScriptSettingEditorViewModel enabledSetting =
+            summary.Settings.Single(setting => setting.Id == "enabled");
 
         Assert.True(summary.HasCustomUi);
         ScriptUiSectionEditorViewModel section = Assert.Single(summary.Sections);
         Assert.Single(section.Rows);
         Assert.False(summary.Settings.Single(setting => setting.Id == "opacity").IsVisible);
 
-        summary.Settings.Single(setting => setting.Id == "enabled").BooleanValue = true;
+        enabledSetting.BooleanValue = true;
 
+        Assert.Same(item, Assert.Single(summary.Scripts));
+        Assert.Same(enabledSetting, summary.Settings.Single(setting => setting.Id == "enabled"));
         Assert.True(summary.Settings.Single(setting => setting.Id == "opacity").IsVisible);
         Assert.Single(section.Rows);
         Assert.True(section.Rows[0].HasSecond);
@@ -311,6 +336,46 @@ public sealed class UiWorkflowTests
 
         Assert.True(context.Workspace.SelectedProfileSet?.Script?.Enabled);
         Assert.True(context.Workspace.Document.GlobalScript?.Enabled);
+    }
+
+    [Fact]
+    public async Task DisablingOneScriptPreservesBasicControlWhenAnotherScriptRemainsEnabled()
+    {
+        using TestContext context = CreateContext();
+        ScriptManagerViewModel manager = context.ViewModel.Scripts;
+
+        manager.Name = "First";
+        manager.Source = "return eps.script {}";
+        await manager.ValidateAndApplyCommand.ExecuteAsync(null);
+        context.ViewModel.Crosshair.Script.Bindings[0].Key = null;
+        manager.NewAssignmentCommand.Execute(null);
+        manager.Name = "Second";
+        manager.Source = "return eps.script {}";
+        await manager.ValidateAndApplyCommand.ExecuteAsync(null);
+        context.ViewModel.Crosshair.IsBasicControlMode = true;
+
+        manager.DisableAssignmentCommand.Execute(null);
+
+        Assert.Equal(DisplayControlMode.Basic, context.Workspace.SelectedProfile.ControlMode);
+        Assert.True(context.Workspace.SelectedProfile.Scripts[0].Enabled);
+        Assert.False(context.Workspace.SelectedProfile.Scripts[1].Enabled);
+    }
+
+    [Fact]
+    public async Task SavingAttachedScriptToLibraryPreservesItsName()
+    {
+        using TestContext context = CreateContext();
+        ScriptManagerViewModel manager = context.ViewModel.Scripts;
+
+        manager.Name = "Named attachment";
+        manager.Source = "return eps.script {}";
+        await manager.ValidateAndApplyCommand.ExecuteAsync(null);
+
+        manager.SaveAssignmentToLibraryCommand.Execute(null);
+
+        var store = new ScriptLibraryStore(Path.Combine(context.Root, "scripts.json"));
+        ScriptLibraryEntry saved = Assert.Single(store.Load());
+        Assert.Equal("Named attachment", saved.Name);
     }
 
     [Fact]

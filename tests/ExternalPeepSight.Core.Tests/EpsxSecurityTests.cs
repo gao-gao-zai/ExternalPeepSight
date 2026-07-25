@@ -147,6 +147,63 @@ public sealed class EpsxSecurityTests
     }
 
     [Fact]
+    public void VersionEightProfileScriptsAreMigratedDuringImport()
+    {
+        ConfigurationDocument seed = ConfigurationDefaults.Create();
+        const string profileSource = "return eps.script { profile = true }";
+        const string profileSetSource = "return eps.script { profile_set = true }";
+        ScriptConfiguration CreateScript(string source) =>
+            new(
+                true,
+                "1",
+                source,
+                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source))),
+                [],
+                []);
+        ConfigurationDocument document = seed with
+        {
+            Profiles =
+            [
+                seed.Profiles[0] with
+                {
+                    ControlMode = DisplayControlMode.Lua,
+                    Script = CreateScript(profileSource),
+                },
+            ],
+            ProfileSets =
+            [
+                seed.ProfileSets[0] with { Script = CreateScript(profileSetSource) },
+            ],
+        };
+        JsonObject current = JsonNode.Parse(ConfigurationJson.Serialize(document))!.AsObject();
+        JsonObject profile = current["profiles"]![0]!.AsObject();
+        profile["script"] = CreateLegacyScript(profile["scripts"]![0]!);
+        profile.Remove("scripts");
+        JsonObject profileSet = current["profileSets"]![0]!.AsObject();
+        profileSet["script"] = CreateLegacyScript(profileSet["scripts"]![0]!);
+        profileSet.Remove("scripts");
+        var portable = new JsonObject
+        {
+            ["schemaVersion"] = 8,
+            ["profiles"] = current["profiles"]!.DeepClone(),
+            ["profileSets"] = current["profileSets"]!.DeepClone(),
+            ["assets"] = current["assets"]!.DeepClone(),
+        };
+        using MemoryStream package = CreateZip(
+            ("manifest.json", """{"schemaVersion":8,"assets":[]}"""),
+            ("profiles.json", portable.ToJsonString()));
+
+        ConfigurationMergeResult result = EpsxArchive.Import(package, seed);
+
+        Assert.Contains(
+            result.Document.Profiles.SelectMany(candidate => candidate.Scripts),
+            script => script.Source == profileSource && script.Id != Guid.Empty);
+        Assert.Contains(
+            result.Document.ProfileSets.SelectMany(candidate => candidate.Scripts),
+            script => script.Source == profileSetSource && script.Id != Guid.Empty);
+    }
+
+    [Fact]
     public void FailedImportDoesNotChangeExistingDocument()
     {
         ConfigurationDocument existing = ConfigurationDefaults.Create();
@@ -196,6 +253,14 @@ public sealed class EpsxSecurityTests
         root.Remove("monitorSelection");
         root.Remove("toasts");
         return root.ToJsonString();
+    }
+
+    private static JsonObject CreateLegacyScript(JsonNode scriptNode)
+    {
+        JsonObject script = scriptNode.DeepClone().AsObject();
+        script.Remove("id");
+        script.Remove("name");
+        return script;
     }
 
     private static MemoryStream CreateZip(params (string Name, string Content)[] entries) =>

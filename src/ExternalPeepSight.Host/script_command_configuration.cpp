@@ -106,7 +106,7 @@ void move_profile_set(JsonObject &root, const bool next)
 std::string apply_script_commands(const std::string_view snapshot_json, const std::vector<ScriptCommand> &commands)
 {
     JsonObject root = JsonObject::Parse(winrt::to_hstring(snapshot_json));
-    if (root.GetNamedNumber(L"schemaVersion") != 8.0)
+    if (root.GetNamedNumber(L"schemaVersion") != 9.0)
     {
         throw std::invalid_argument("Script command configuration schema version is not supported.");
     }

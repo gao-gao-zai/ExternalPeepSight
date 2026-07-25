@@ -20,7 +20,7 @@ public sealed class ConfigurationTests
         Assert.Equal(
             ConfigurationJson.Serialize(document),
             ConfigurationJson.Serialize(restored));
-        Assert.Contains("\"schemaVersion\":8", json);
+        Assert.Contains("\"schemaVersion\":9", json);
         Assert.Contains("\"orbitAngleOffsetDeg\":0", json);
         Assert.DoesNotContain("\"switches\":", json[..json.IndexOf("\"profiles\"", StringComparison.Ordinal)]);
     }
@@ -70,7 +70,93 @@ public sealed class ConfigurationTests
     }
 
     [Fact]
-    public void ScriptUiLayoutRoundTripsThroughSchemaEight()
+    public void MultipleScriptsRoundTripInStableOrder()
+    {
+        ConfigurationDocument seed = ConfigurationDefaults.Create();
+        const string source = "return eps.script {}";
+        string hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source)));
+        ScriptConfiguration first = new(
+            true,
+            "1",
+            source,
+            hash,
+            [],
+            [],
+            Id: Guid.NewGuid(),
+            Name: "First");
+        ScriptConfiguration second = first with
+        {
+            Id = Guid.NewGuid(),
+            Name = "Second",
+        };
+        ConfigurationDocument document = seed with
+        {
+            Profiles =
+            [
+                seed.Profiles[0] with
+                {
+                    ControlMode = DisplayControlMode.Lua,
+                    Scripts = [first, second],
+                },
+            ],
+        };
+
+        ConfigurationDocument restored = ConfigurationJson.Deserialize(ConfigurationJson.Serialize(document));
+
+        Assert.Equal(["First", "Second"], restored.Profiles[0].Scripts.Select(script => script.Name));
+        Assert.Equal([first.Id, second.Id], restored.Profiles[0].Scripts.Select(script => script.Id));
+    }
+
+    [Fact]
+    public void VersionEightSingleScriptsMigrateToScriptStacks()
+    {
+        ConfigurationDocument seed = ConfigurationDefaults.Create();
+        const string source = "return eps.script {}";
+        ScriptConfiguration script = new(
+            true,
+            "1",
+            source,
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source))),
+            [],
+            []);
+        ConfigurationDocument current = seed with
+        {
+            Profiles =
+            [
+                seed.Profiles[0] with
+                {
+                    ControlMode = DisplayControlMode.Lua,
+                    Script = script,
+                },
+            ],
+        };
+        JsonObject versionEight = JsonNode.Parse(ConfigurationJson.Serialize(current))!.AsObject();
+        versionEight["schemaVersion"] = 8;
+        JsonObject profile = versionEight["profiles"]![0]!.AsObject();
+        JsonObject legacyScript = profile["scripts"]![0]!.DeepClone().AsObject();
+        legacyScript.Remove("id");
+        legacyScript.Remove("name");
+        profile["script"] = legacyScript;
+        profile.Remove("scripts");
+        foreach (JsonNode? profileSetNode in versionEight["profileSets"]!.AsArray())
+        {
+            JsonObject profileSet = profileSetNode!.AsObject();
+            profileSet["script"] = null;
+            profileSet.Remove("scripts");
+        }
+        versionEight["globalScript"] = null;
+        versionEight.Remove("globalScripts");
+
+        ConfigurationDocument restored = ConfigurationJson.Deserialize(versionEight.ToJsonString());
+
+        ScriptConfiguration migrated = Assert.Single(restored.Profiles[0].Scripts);
+        Assert.NotEqual(Guid.Empty, migrated.Id);
+        Assert.Equal(restored.Profiles[0].Name, migrated.Name);
+        Assert.Equal(source, migrated.Source);
+    }
+
+    [Fact]
+    public void ScriptUiLayoutRoundTripsThroughCurrentSchema()
     {
         ConfigurationDocument seed = ConfigurationDefaults.Create();
         const string source = "return eps.script { api_version = \"2\" }";
@@ -175,6 +261,7 @@ public sealed class ConfigurationTests
         JsonObject portable = JsonNode.Parse(profilesJson)!.AsObject();
 
         Assert.False(portable.ContainsKey("globalScript"));
+        Assert.False(portable.ContainsKey("globalScripts"));
 
         stream.Position = 0;
         ConfigurationMergeResult result = EpsxArchive.Import(stream, ConfigurationDefaults.Create());
@@ -316,7 +403,7 @@ public sealed class ConfigurationTests
         }
 
         ConfigurationDocument restored = ConfigurationJson.Deserialize(versionThree.ToJsonString());
-        Assert.Equal(8, restored.SchemaVersion);
+        Assert.Equal(ConfigurationJson.CurrentSchemaVersion, restored.SchemaVersion);
         Assert.All(
             restored.Profiles[0].Crosshair.Arms,
             arm =>
@@ -348,7 +435,7 @@ public sealed class ConfigurationTests
 
         ConfigurationDocument restored = ConfigurationJson.Deserialize(versionFour.ToJsonString());
 
-        Assert.Equal(8, restored.SchemaVersion);
+        Assert.Equal(ConfigurationJson.CurrentSchemaVersion, restored.SchemaVersion);
         Assert.All(
             restored.Profiles[0].Crosshair.Arms,
             arm =>
@@ -422,7 +509,7 @@ public sealed class ConfigurationTests
     public void NewerSchemaVersionIsRejected()
     {
         string json = ConfigurationJson.Serialize(ConfigurationDefaults.Create())
-            .Replace("\"schemaVersion\":8", "\"schemaVersion\":99");
+            .Replace("\"schemaVersion\":9", "\"schemaVersion\":99");
 
         Assert.Throws<ConfigurationFormatException>(() => ConfigurationJson.Deserialize(json));
     }

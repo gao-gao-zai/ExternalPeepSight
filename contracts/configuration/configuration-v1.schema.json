@@ -1,6 +1,6 @@
 ﻿{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "ExternalPeepSight configuration schema 8",
+  "title": "ExternalPeepSight configuration schema 9",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -12,11 +12,11 @@
     "monitorSelection",
     "inputBackend",
     "toasts",
-    "globalScript"
+    "globalScripts"
   ],
   "properties": {
     "schemaVersion": {
-      "const": 8
+      "const": 9
     },
     "profiles": {
       "type": "array",
@@ -57,8 +57,8 @@
         "lowLevelHook"
       ]
     },
-    "globalScript": {
-      "$ref": "#/$defs/nullableScript"
+    "globalScripts": {
+      "$ref": "#/$defs/scripts"
     }
   },
   "$defs": {
@@ -253,7 +253,7 @@
         "image",
         "switches",
         "controlMode",
-        "script"
+        "scripts"
       ],
       "properties": {
         "id": {
@@ -283,8 +283,8 @@
             "lua"
           ]
         },
-        "script": {
-          "$ref": "#/$defs/nullableScript"
+        "scripts": {
+          "$ref": "#/$defs/scripts"
         }
       }
     },
@@ -296,7 +296,7 @@
         "name",
         "profileIds",
         "selectedProfileId",
-        "script"
+        "scripts"
       ],
       "properties": {
         "id": {
@@ -316,8 +316,8 @@
         "selectedProfileId": {
           "$ref": "#/$defs/nullableGuid"
         },
-        "script": {
-          "$ref": "#/$defs/nullableScript"
+        "scripts": {
+          "$ref": "#/$defs/scripts"
         }
       }
     },
@@ -565,6 +565,8 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "id",
+        "name",
         "enabled",
         "apiVersion",
         "source",
@@ -574,6 +576,12 @@
         "ui"
       ],
       "properties": {
+        "id": {
+          "$ref": "#/$defs/guid"
+        },
+        "name": {
+          "$ref": "#/$defs/name"
+        },
         "enabled": {
           "type": "boolean"
         },
@@ -620,6 +628,13 @@
           "type": "null"
         }
       ]
+    },
+    "scripts": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/script"
+      }
     },
     "asset": {
       "type": "object",

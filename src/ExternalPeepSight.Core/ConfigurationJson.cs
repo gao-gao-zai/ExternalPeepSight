@@ -28,7 +28,7 @@ public static class ConfigurationJson
     /// <summary>
     /// Gets the newest schema version supported by this build.
     /// </summary>
-    public const int CurrentSchemaVersion = 8;
+    public const int CurrentSchemaVersion = 9;
 
     private static readonly JsonSerializerOptions CompactOptions = CreateOptions(false);
     private static readonly JsonSerializerOptions IndentedOptions = CreateOptions(true);
@@ -73,20 +73,22 @@ public static class ConfigurationJson
             int version = GetSchemaVersion(root);
             JsonObject migrated = version switch
             {
-                0 => MigrateVersionSeven(MigrateVersionSix(
+                0 => MigrateVersionEight(MigrateVersionSeven(MigrateVersionSix(
                     MigrateVersionFive(MigrateVersionFour(
-                        MigrateVersionThree(MigrateVersionTwo(MigrateVersionOne(MigrateVersionZero(root)))))))),
-                1 => MigrateVersionSeven(MigrateVersionSix(
+                        MigrateVersionThree(MigrateVersionTwo(MigrateVersionOne(MigrateVersionZero(root))))))))),
+                1 => MigrateVersionEight(MigrateVersionSeven(MigrateVersionSix(
                     MigrateVersionFive(MigrateVersionFour(
-                        MigrateVersionThree(MigrateVersionTwo(MigrateVersionOne(root))))))),
-                2 => MigrateVersionSeven(MigrateVersionSix(
-                    MigrateVersionFive(MigrateVersionFour(MigrateVersionThree(MigrateVersionTwo(root)))))),
-                3 => MigrateVersionSeven(MigrateVersionSix(
-                    MigrateVersionFive(MigrateVersionFour(MigrateVersionThree(root))))),
-                4 => MigrateVersionSeven(MigrateVersionSix(MigrateVersionFive(MigrateVersionFour(root)))),
-                5 => MigrateVersionSeven(MigrateVersionSix(MigrateVersionFive(root))),
-                6 => MigrateVersionSeven(MigrateVersionSix(root)),
-                7 => MigrateVersionSeven(root),
+                        MigrateVersionThree(MigrateVersionTwo(MigrateVersionOne(root)))))))),
+                2 => MigrateVersionEight(MigrateVersionSeven(MigrateVersionSix(
+                    MigrateVersionFive(MigrateVersionFour(MigrateVersionThree(MigrateVersionTwo(root))))))),
+                3 => MigrateVersionEight(MigrateVersionSeven(MigrateVersionSix(
+                    MigrateVersionFive(MigrateVersionFour(MigrateVersionThree(root)))))),
+                4 => MigrateVersionEight(MigrateVersionSeven(
+                    MigrateVersionSix(MigrateVersionFive(MigrateVersionFour(root))))),
+                5 => MigrateVersionEight(MigrateVersionSeven(MigrateVersionSix(MigrateVersionFive(root)))),
+                6 => MigrateVersionEight(MigrateVersionSeven(MigrateVersionSix(root))),
+                7 => MigrateVersionEight(MigrateVersionSeven(root)),
+                8 => MigrateVersionEight(root),
                 CurrentSchemaVersion => root,
                 > CurrentSchemaVersion => throw new ConfigurationFormatException(
                     $"Configuration schema version {version} is newer than supported version {CurrentSchemaVersion}."),
@@ -123,7 +125,10 @@ public static class ConfigurationJson
     internal static T? DeserializeCanonical<T>(ReadOnlySpan<byte> json) =>
         JsonSerializer.Deserialize<T>(json, CompactOptions);
 
-    private static int GetSchemaVersion(JsonObject root)
+    internal static T? DeserializeCanonical<T>(JsonNode json) =>
+        json.Deserialize<T>(CompactOptions);
+
+    internal static int GetSchemaVersion(JsonObject root)
     {
         if (!root.TryGetPropertyValue("schemaVersion", out JsonNode? versionNode) || versionNode is null)
         {
@@ -357,8 +362,82 @@ public static class ConfigurationJson
         }
 
         AddScriptUi(migrated["globalScript"]);
+        migrated["schemaVersion"] = 8;
+        return migrated;
+    }
+
+    private static JsonObject MigrateVersionEight(JsonObject root)
+    {
+        var migrated = (JsonObject)root.DeepClone();
+        migrated["globalScripts"] = MigrateScriptStack(migrated["globalScript"], "Global");
+        migrated.Remove("globalScript");
+
+        if (migrated["profiles"] is JsonArray profiles)
+        {
+            foreach (JsonNode? profileNode in profiles)
+            {
+                if (profileNode is not JsonObject profile)
+                {
+                    continue;
+                }
+
+                string fallbackName = profile["name"]?.GetValue<string>() ?? "Script";
+                profile["scripts"] = MigrateScriptStack(profile["script"], fallbackName);
+                profile.Remove("script");
+            }
+        }
+
+        if (migrated["profileSets"] is JsonArray profileSets)
+        {
+            foreach (JsonNode? profileSetNode in profileSets)
+            {
+                if (profileSetNode is not JsonObject profileSet)
+                {
+                    continue;
+                }
+
+                string fallbackName = profileSet["name"]?.GetValue<string>() ?? "Script";
+                profileSet["scripts"] = MigrateScriptStack(profileSet["script"], fallbackName);
+                profileSet.Remove("script");
+            }
+        }
+
         migrated["schemaVersion"] = CurrentSchemaVersion;
         return migrated;
+    }
+
+    internal static JsonObject MigratePortableVersionEight(JsonObject root)
+    {
+        JsonObject migrated = MigrateVersionEight(root);
+        migrated.Remove("globalScripts");
+        return migrated;
+    }
+
+    private static JsonArray MigrateScriptStack(JsonNode? scriptNode, string fallbackName)
+    {
+        var result = new JsonArray();
+        if (scriptNode is not JsonObject script)
+        {
+            return result;
+        }
+
+        var migrated = (JsonObject)script.DeepClone();
+        migrated["id"] = CreateMigratedScriptId(migrated, fallbackName);
+        migrated["name"] = fallbackName;
+        result.Add(migrated);
+        return result;
+    }
+
+    private static Guid CreateMigratedScriptId(JsonObject script, string fallbackName)
+    {
+        string identity =
+            $"{fallbackName}\n{script["sourceHash"]?.GetValue<string>()}\n{script["source"]?.GetValue<string>()}";
+        byte[] hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(identity));
+        byte[] guidBytes = hash[..16];
+        guidBytes[7] = (byte)((guidBytes[7] & 0x0F) | 0x50);
+        guidBytes[8] = (byte)((guidBytes[8] & 0x3F) | 0x80);
+        return new Guid(guidBytes);
     }
 
     private static void AddScriptUi(JsonNode? scriptNode)
