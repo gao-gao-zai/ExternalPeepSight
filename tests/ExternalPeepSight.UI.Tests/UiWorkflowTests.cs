@@ -303,6 +303,19 @@ public sealed class UiWorkflowTests
     }
 
     [Fact]
+    public void InputBackendSelectionUpdatesConfigurationDocument()
+    {
+        using TestContext context = CreateContext();
+
+        context.ViewModel.Settings.InputBackend = InputCaptureBackend.LowLevelHook;
+
+        Assert.Equal(InputCaptureBackend.LowLevelHook, context.Workspace.Document.InputBackend);
+        Assert.Contains(
+            context.ViewModel.Settings.InputBackends,
+            option => option.Value == InputCaptureBackend.LowLevelHook);
+    }
+
+    [Fact]
     public void MonitorIdentityMatchesNativeNormalizationRules()
     {
         string first = MonitorIdentity.Create(

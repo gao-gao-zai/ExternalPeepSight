@@ -26,6 +26,19 @@ public sealed class ConfigurationValidationTests
     }
 
     [Fact]
+    public void InvalidInputBackendIsRejected()
+    {
+        ConfigurationDocument document = ConfigurationDefaults.Create() with
+        {
+            InputBackend = (InputCaptureBackend)99,
+        };
+
+        ConfigurationValidationResult result = ConfigurationValidator.Validate(document);
+
+        Assert.Contains(result.Issues, issue => issue.Path == "$.inputBackend");
+    }
+
+    [Fact]
     public void DuplicateAndNullObjectsAreRejected()
     {
         ConfigurationDocument seed = ConfigurationDefaults.Create();

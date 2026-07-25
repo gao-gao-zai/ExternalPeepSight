@@ -1608,6 +1608,11 @@ internal sealed class SettingsViewModel : WorkspaceViewModel
             new(AppTheme.Light, "Settings.ThemeLight", localization),
             new(AppTheme.Dark, "Settings.ThemeDark", localization),
         ];
+        InputBackends =
+        [
+            new(InputCaptureBackend.RawInput, "Settings.InputBackendRawInput", localization),
+            new(InputCaptureBackend.LowLevelHook, "Settings.InputBackendLowLevelHook", localization),
+        ];
         ToastPositions =
         [
             new(ToastPosition.TopLeft, "Settings.TopLeft", localization),
@@ -1620,6 +1625,8 @@ internal sealed class SettingsViewModel : WorkspaceViewModel
     }
 
     public IReadOnlyList<LocalizedOption<AppTheme>> Themes { get; }
+
+    public IReadOnlyList<LocalizedOption<InputCaptureBackend>> InputBackends { get; }
 
     public IReadOnlyList<LocalizedOption<ToastPosition>> ToastPositions { get; }
 
@@ -1647,6 +1654,12 @@ internal sealed class SettingsViewModel : WorkspaceViewModel
                 SavePreferences();
             }
         }
+    }
+
+    public InputCaptureBackend InputBackend
+    {
+        get => Workspace.Document.InputBackend;
+        set => Workspace.UpdateDocument(document => document with { InputBackend = value });
     }
 
     public bool ToastEnabled
@@ -1705,6 +1718,7 @@ internal sealed class SettingsViewModel : WorkspaceViewModel
 
     protected override void Refresh()
     {
+        OnPropertyChanged(nameof(InputBackend));
         OnPropertyChanged(nameof(ToastEnabled));
         OnPropertyChanged(nameof(ToastPosition));
         OnPropertyChanged(nameof(ToastDuration));

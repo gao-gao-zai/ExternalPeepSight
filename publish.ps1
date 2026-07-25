@@ -165,6 +165,12 @@ Invoke-Step "Managed self-contained publish" $dotnet @(
     "/p:DebugSymbols=false"
 )
 
+$pdbFiles = Get-ChildItem -LiteralPath $uiPublishDirectory -Recurse -Filter "*.pdb" -File
+if ($pdbFiles) {
+    $pdbFiles | Remove-Item -Force
+    Write-Host "Removed $($pdbFiles.Count) debug symbol files from the release package."
+}
+
 Copy-Item -LiteralPath $nativeHost `
     -Destination (Join-Path $uiPublishDirectory "ExternalPeepSight.Host.exe")
 Copy-MsvcRuntime -VisualStudioPath $vsPath -Destination $uiPublishDirectory

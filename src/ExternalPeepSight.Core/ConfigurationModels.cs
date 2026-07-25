@@ -252,6 +252,15 @@ public enum InputDeviceKind
 }
 
 /// <summary>
+/// Selects the Windows input API used to capture configured bindings.
+/// </summary>
+public enum InputCaptureBackend
+{
+    RawInput,
+    LowLevelHook,
+}
+
+/// <summary>
 /// Identifies a bindable physical mouse button.
 /// </summary>
 public enum InputMouseButton : ushort
@@ -354,6 +363,11 @@ public sealed record ConfigurationDocument
     /// </summary>
     public MonitorSelection MonitorSelection { get; init; } =
         new(MonitorSelectionMode.Focus, [], FocusMonitorSource.ForegroundWindowThenMouse);
+
+    /// <summary>
+    /// Gets the Windows input API used to capture configured bindings.
+    /// </summary>
+    public InputCaptureBackend InputBackend { get; init; } = InputCaptureBackend.RawInput;
 
     /// <summary>
     /// Gets the toast configuration.

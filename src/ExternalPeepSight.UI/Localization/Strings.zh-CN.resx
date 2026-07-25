@@ -127,6 +127,10 @@
   <data name="Settings.Language" xml:space="preserve"><value>语言</value></data>
   <data name="Settings.LanguageChinese" xml:space="preserve"><value>简体中文</value></data>
   <data name="Settings.LanguageEnglish" xml:space="preserve"><value>English</value></data>
+  <data name="Settings.Input" xml:space="preserve"><value>输入捕获</value></data>
+  <data name="Settings.InputBackend" xml:space="preserve"><value>键盘和鼠标后端</value></data>
+  <data name="Settings.InputBackendRawInput" xml:space="preserve"><value>Raw Input</value></data>
+  <data name="Settings.InputBackendLowLevelHook" xml:space="preserve"><value>低级钩子（云电脑兼容）</value></data>
   <data name="Settings.Toasts" xml:space="preserve"><value>状态提示</value></data>
   <data name="Settings.ToastEnabled" xml:space="preserve"><value>显示 Host 状态提示</value></data>
   <data name="Settings.ToastPosition" xml:space="preserve"><value>显示位置</value></data>

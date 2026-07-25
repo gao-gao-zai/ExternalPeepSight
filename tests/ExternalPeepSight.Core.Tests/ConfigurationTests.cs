@@ -19,7 +19,7 @@ public sealed class ConfigurationTests
         Assert.Equal(
             ConfigurationJson.Serialize(document),
             ConfigurationJson.Serialize(restored));
-        Assert.Contains("\"schemaVersion\":5", json);
+        Assert.Contains("\"schemaVersion\":6", json);
         Assert.Contains("\"orbitAngleOffsetDeg\":0", json);
         Assert.DoesNotContain("\"switches\":", json[..json.IndexOf("\"profiles\"", StringComparison.Ordinal)]);
     }
@@ -132,7 +132,7 @@ public sealed class ConfigurationTests
         }
 
         ConfigurationDocument restored = ConfigurationJson.Deserialize(versionThree.ToJsonString());
-        Assert.Equal(5, restored.SchemaVersion);
+        Assert.Equal(6, restored.SchemaVersion);
         Assert.All(
             restored.Profiles[0].Crosshair.Arms,
             arm =>
@@ -164,7 +164,7 @@ public sealed class ConfigurationTests
 
         ConfigurationDocument restored = ConfigurationJson.Deserialize(versionFour.ToJsonString());
 
-        Assert.Equal(5, restored.SchemaVersion);
+        Assert.Equal(6, restored.SchemaVersion);
         Assert.All(
             restored.Profiles[0].Crosshair.Arms,
             arm =>
@@ -173,6 +173,32 @@ public sealed class ConfigurationTests
                 Assert.Equal(15, arm.LengthPx);
                 Assert.Equal(4, arm.WidthPx);
             });
+    }
+
+    [Fact]
+    public void VersionFiveDocumentsDefaultToRawInputBackend()
+    {
+        JsonObject versionFive = JsonNode.Parse(ConfigurationJson.Serialize(ConfigurationDefaults.Create()))!.AsObject();
+        versionFive["schemaVersion"] = 5;
+        versionFive.Remove("inputBackend");
+
+        ConfigurationDocument restored = ConfigurationJson.Deserialize(versionFive.ToJsonString());
+
+        Assert.Equal(ConfigurationJson.CurrentSchemaVersion, restored.SchemaVersion);
+        Assert.Equal(InputCaptureBackend.RawInput, restored.InputBackend);
+    }
+
+    [Fact]
+    public void InputBackendRoundTripsThroughJson()
+    {
+        ConfigurationDocument document = ConfigurationDefaults.Create() with
+        {
+            InputBackend = InputCaptureBackend.LowLevelHook,
+        };
+
+        ConfigurationDocument restored = ConfigurationJson.Deserialize(ConfigurationJson.Serialize(document));
+
+        Assert.Equal(InputCaptureBackend.LowLevelHook, restored.InputBackend);
     }
 
     [Fact]
@@ -212,7 +238,7 @@ public sealed class ConfigurationTests
     public void NewerSchemaVersionIsRejected()
     {
         string json = ConfigurationJson.Serialize(ConfigurationDefaults.Create())
-            .Replace("\"schemaVersion\":5", "\"schemaVersion\":99");
+            .Replace("\"schemaVersion\":6", "\"schemaVersion\":99");
 
         Assert.Throws<ConfigurationFormatException>(() => ConfigurationJson.Deserialize(json));
     }

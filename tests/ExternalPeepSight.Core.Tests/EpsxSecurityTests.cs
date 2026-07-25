@@ -22,7 +22,7 @@ public sealed class EpsxSecurityTests
     {
         using MemoryStream missingManifest = CreateZip(
             ("profiles.json", CreatePortableDocument(ConfigurationDefaults.Create())));
-        using MemoryStream missingProfiles = CreateZip(("manifest.json", "{\"schemaVersion\":5,\"assets\":[]}"));
+        using MemoryStream missingProfiles = CreateZip(("manifest.json", "{\"schemaVersion\":6,\"assets\":[]}"));
 
         Assert.Throws<ConfigurationFormatException>(() =>
             EpsxArchive.Import(missingManifest, ConfigurationDefaults.Create()));
@@ -165,7 +165,7 @@ public sealed class EpsxSecurityTests
         JsonObject portable = JsonNode.Parse(CreatePortableDocument(document))!.AsObject();
         portable["toasts"] = JsonSerializer.SerializeToNode(document.Toasts);
         using MemoryStream package = CreateZip(
-            ("manifest.json", "{\"schemaVersion\":5,\"assets\":[]}"),
+            ("manifest.json", "{\"schemaVersion\":6,\"assets\":[]}"),
             ("profiles.json", portable.ToJsonString()));
 
         Assert.Throws<ConfigurationFormatException>(() =>

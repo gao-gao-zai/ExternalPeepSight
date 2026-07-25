@@ -50,6 +50,30 @@
                 </Border>
 
                 <Border Classes="surface">
+                    <Grid RowDefinitions="48,56">
+                        <TextBlock
+                            Margin="18,0"
+                            VerticalAlignment="Center"
+                            Classes="section-title"
+                            Text="{DynamicResource Loc.Settings.Input}" />
+                        <Grid
+                            Grid.Row="1"
+                            Margin="18,0"
+                            ColumnDefinitions="*,280">
+                            <TextBlock Classes="field-label" Text="{DynamicResource Loc.Settings.InputBackend}" />
+                            <ComboBox
+                                Grid.Column="1"
+                                VerticalAlignment="Center"
+                                x:CompileBindings="False"
+                                ItemsSource="{Binding InputBackends}"
+                                DisplayMemberBinding="{Binding Name}"
+                                SelectedValue="{Binding InputBackend, Mode=TwoWay}"
+                                SelectedValueBinding="{Binding Value}" />
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <Border Classes="surface">
                     <Grid RowDefinitions="48,56,56,56,56,56,56">
                         <TextBlock
                             Margin="18,0"

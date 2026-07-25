@@ -644,7 +644,7 @@ RenderConfiguration parse_render_configuration(const std::string_view snapshot_j
                                                const std::filesystem::path &asset_root)
 {
     const JsonObject root = JsonObject::Parse(winrt::to_hstring(snapshot_json));
-    if (checked_integer(root, L"schemaVersion", 5U, 5U) != 5U)
+    if (checked_integer(root, L"schemaVersion", 6U, 6U) != 6U)
     {
         throw std::invalid_argument("Configuration schema version is not supported.");
     }

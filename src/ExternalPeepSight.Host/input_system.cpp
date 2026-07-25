@@ -36,8 +36,10 @@ constexpr wchar_t kInputWindowClassName[] = L"ExternalPeepSight.Input.Window";
 constexpr UINT kApplyConfigurationMessage = WM_APP + 1U;
 constexpr UINT kHookKeyboardMessage = WM_APP + 2U;
 constexpr UINT kHookMouseMessage = WM_APP + 3U;
+constexpr UINT_PTR kKeyboardPollingTimerId = 1U;
 constexpr int kFirstHotkeyIdentifier = 100;
 constexpr DWORD kApplyConfigurationTimeoutMs = 5'000U;
+constexpr UINT kKeyboardPollingIntervalMs = 12U;
 constexpr InputModifiers kKnownModifiers =
     InputModifiers::ctrl | InputModifiers::alt | InputModifiers::shift | InputModifiers::win;
 
@@ -219,6 +221,19 @@ void require_allowed_properties(const JsonObject &object, const std::initializer
     throw std::invalid_argument("Input visibility rule is invalid.");
 }
 
+[[nodiscard]] InputCaptureBackend parse_input_backend(const std::wstring_view value)
+{
+    if (value == L"rawInput")
+    {
+        return InputCaptureBackend::raw_input;
+    }
+    if (value == L"lowLevelHook")
+    {
+        return InputCaptureBackend::low_level_hook;
+    }
+    throw std::invalid_argument("Input capture backend is invalid.");
+}
+
 [[nodiscard]] bool is_modifier_key(const InputKeyIdentity &key) noexcept
 {
     if (key.device != InputDeviceKind::keyboard)
@@ -307,7 +322,7 @@ void validate_key(const InputKeyIdentity &key)
 }
 
 void add_action(InputBindingPlan &plan, std::vector<InputKeyIdentity> &used_keys, const InputKeyIdentity &key,
-                const InputAction action, int &next_hotkey_identifier)
+                const InputAction action, const InputCaptureBackend backend, int &next_hotkey_identifier)
 {
     validate_key(key);
     if (std::ranges::find(used_keys, key) != used_keys.end())
@@ -316,9 +331,9 @@ void add_action(InputBindingPlan &plan, std::vector<InputKeyIdentity> &used_keys
     }
     used_keys.push_back(key);
 
-    const bool requires_raw_input = key.device == InputDeviceKind::mouse ||
-                                    action.operation == InputSwitchOperation::hold ||
-                                    key.modifiers == InputModifiers::none;
+    const bool requires_raw_input =
+        backend == InputCaptureBackend::low_level_hook || key.device == InputDeviceKind::mouse ||
+        action.operation == InputSwitchOperation::hold || key.modifiers == InputModifiers::none;
     if (requires_raw_input)
     {
         plan.raw_bindings.push_back({key, action});
@@ -334,7 +349,8 @@ void add_action(InputBindingPlan &plan, std::vector<InputKeyIdentity> &used_keys
 }
 
 void add_switch_binding(InputBindingPlan &plan, std::vector<InputKeyIdentity> &used_keys,
-                        const InputHotkeyBinding &binding, const InputLogicalSwitch target, int &next_hotkey_identifier)
+                        const InputHotkeyBinding &binding, const InputLogicalSwitch target,
+                        const InputCaptureBackend backend, int &next_hotkey_identifier)
 {
     switch (binding.mode)
     {
@@ -349,7 +365,7 @@ void add_switch_binding(InputBindingPlan &plan, std::vector<InputKeyIdentity> &u
         {
             throw std::invalid_argument("A toggle input binding must contain only toggleKey.");
         }
-        add_action(plan, used_keys, *binding.toggle_key, {target, InputSwitchOperation::toggle},
+        add_action(plan, used_keys, *binding.toggle_key, {target, InputSwitchOperation::toggle}, backend,
                    next_hotkey_identifier);
         return;
     case InputActivationMode::independent:
@@ -357,9 +373,9 @@ void add_switch_binding(InputBindingPlan &plan, std::vector<InputKeyIdentity> &u
         {
             throw std::invalid_argument("An independent input binding must contain only enableKey and disableKey.");
         }
-        add_action(plan, used_keys, *binding.enable_key, {target, InputSwitchOperation::enable},
+        add_action(plan, used_keys, *binding.enable_key, {target, InputSwitchOperation::enable}, backend,
                    next_hotkey_identifier);
-        add_action(plan, used_keys, *binding.disable_key, {target, InputSwitchOperation::disable},
+        add_action(plan, used_keys, *binding.disable_key, {target, InputSwitchOperation::disable}, backend,
                    next_hotkey_identifier);
         return;
     case InputActivationMode::hold:
@@ -367,7 +383,8 @@ void add_switch_binding(InputBindingPlan &plan, std::vector<InputKeyIdentity> &u
         {
             throw std::invalid_argument("A hold input binding must contain only holdKey.");
         }
-        add_action(plan, used_keys, *binding.hold_key, {target, InputSwitchOperation::hold}, next_hotkey_identifier);
+        add_action(plan, used_keys, *binding.hold_key, {target, InputSwitchOperation::hold}, backend,
+                   next_hotkey_identifier);
         return;
     }
     throw std::invalid_argument("Input activation mode is invalid.");
@@ -376,6 +393,52 @@ void add_switch_binding(InputBindingPlan &plan, std::vector<InputKeyIdentity> &u
 [[nodiscard]] InputPhysicalKey physical_key(const InputKeyIdentity &key) noexcept
 {
     return {key.device, key.code, key.extended};
+}
+
+void add_polling_key(InputBindingPlan &plan, const InputPhysicalKey key, const UINT virtual_key_code)
+{
+    if (std::ranges::find(plan.polling_keys, InputPollingKey{key, virtual_key_code}) == plan.polling_keys.end())
+    {
+        plan.polling_keys.push_back({key, virtual_key_code});
+    }
+}
+
+void add_modifier_polling_keys(InputBindingPlan &plan, const InputModifiers modifiers)
+{
+    if (has_modifier(modifiers, InputModifiers::ctrl))
+    {
+        add_polling_key(plan, {InputDeviceKind::keyboard, 0x1DU, false}, VK_LCONTROL);
+        add_polling_key(plan, {InputDeviceKind::keyboard, 0x1DU, true}, VK_RCONTROL);
+    }
+    if (has_modifier(modifiers, InputModifiers::alt))
+    {
+        add_polling_key(plan, {InputDeviceKind::keyboard, 0x38U, false}, VK_LMENU);
+        add_polling_key(plan, {InputDeviceKind::keyboard, 0x38U, true}, VK_RMENU);
+    }
+    if (has_modifier(modifiers, InputModifiers::shift))
+    {
+        add_polling_key(plan, {InputDeviceKind::keyboard, 0x2AU, false}, VK_LSHIFT);
+        add_polling_key(plan, {InputDeviceKind::keyboard, 0x36U, false}, VK_RSHIFT);
+    }
+    if (has_modifier(modifiers, InputModifiers::win))
+    {
+        add_polling_key(plan, {InputDeviceKind::keyboard, 0x5BU, true}, VK_LWIN);
+        add_polling_key(plan, {InputDeviceKind::keyboard, 0x5CU, true}, VK_RWIN);
+    }
+}
+
+void add_low_level_polling_keys(InputBindingPlan &plan)
+{
+    for (const RawInputBinding &binding : plan.raw_bindings)
+    {
+        if (binding.key.device != InputDeviceKind::keyboard)
+        {
+            continue;
+        }
+
+        add_polling_key(plan, physical_key(binding.key), virtual_key(binding.key));
+        add_modifier_polling_keys(plan, binding.key.modifiers);
+    }
 }
 
 [[nodiscard]] std::string describe_key(const InputKeyIdentity &key)
@@ -408,6 +471,33 @@ void add_switch_binding(InputBindingPlan &plan, std::vector<InputKeyIdentity> &u
         return InputModifiers::win;
     }
     return InputModifiers::none;
+}
+
+[[nodiscard]] bool is_extended_virtual_key(const UINT virtual_key_code) noexcept
+{
+    // Some keyboard/HID paths report the virtual-key identity correctly but omit RI_KEY_E0.
+    switch (virtual_key_code)
+    {
+    case VK_RCONTROL:
+    case VK_RMENU:
+    case VK_INSERT:
+    case VK_DELETE:
+    case VK_HOME:
+    case VK_END:
+    case VK_PRIOR:
+    case VK_NEXT:
+    case VK_LEFT:
+    case VK_UP:
+    case VK_RIGHT:
+    case VK_DOWN:
+    case VK_SNAPSHOT:
+    case VK_LWIN:
+    case VK_RWIN:
+    case VK_APPS:
+        return true;
+    default:
+        return false;
+    }
 }
 
 [[nodiscard]] JsonObject select_active_profile(const JsonObject &root)
@@ -457,11 +547,12 @@ InputConfiguration parse_input_configuration(const std::string_view snapshot_jso
 
     const JsonObject root = JsonObject::Parse(winrt::to_hstring(snapshot_json));
     const double schema_version = root.GetNamedNumber(L"schemaVersion");
-    if (!std::isfinite(schema_version) || schema_version != 5.0)
+    if (!std::isfinite(schema_version) || schema_version != 6.0)
     {
         throw std::invalid_argument("Input configuration schema version is not supported.");
     }
 
+    const InputCaptureBackend input_backend = parse_input_backend(root.GetNamedString(L"inputBackend"));
     const JsonObject profile = select_active_profile(root);
     const IJsonValue switches_value = profile.GetNamedValue(L"switches");
     if (switches_value.ValueType() != JsonValueType::Object)
@@ -473,6 +564,7 @@ InputConfiguration parse_input_configuration(const std::string_view snapshot_jso
     require_allowed_properties(switches,
                                {L"visibilityRule", L"initialStateA", L"initialStateB", L"switchA", L"switchB"});
     return {
+        input_backend,
         parse_visibility_rule(switches.GetNamedString(L"visibilityRule")),
         switches.GetNamedBoolean(L"initialStateA"),
         switches.GetNamedBoolean(L"initialStateB"),
@@ -486,8 +578,14 @@ InputBindingPlan build_input_binding_plan(const InputConfiguration &configuratio
     InputBindingPlan plan;
     std::vector<InputKeyIdentity> used_keys;
     int next_hotkey_identifier = kFirstHotkeyIdentifier;
-    add_switch_binding(plan, used_keys, configuration.switch_a, InputLogicalSwitch::a, next_hotkey_identifier);
-    add_switch_binding(plan, used_keys, configuration.switch_b, InputLogicalSwitch::b, next_hotkey_identifier);
+    add_switch_binding(plan, used_keys, configuration.switch_a, InputLogicalSwitch::a, configuration.input_backend,
+                       next_hotkey_identifier);
+    add_switch_binding(plan, used_keys, configuration.switch_b, InputLogicalSwitch::b, configuration.input_backend,
+                       next_hotkey_identifier);
+    if (configuration.input_backend == InputCaptureBackend::low_level_hook)
+    {
+        add_low_level_polling_keys(plan);
+    }
     return plan;
 }
 
@@ -528,6 +626,7 @@ std::vector<RawInputTransition> parse_raw_input(const std::span<const std::byte>
         std::memcpy(&keyboard, payload.data() + data_offset, sizeof(keyboard));
         std::uint16_t scan_code = keyboard.MakeCode;
         bool extended = (keyboard.Flags & (RI_KEY_E0 | RI_KEY_E1)) != 0U;
+        extended = extended || is_extended_virtual_key(keyboard.VKey);
         if (scan_code == 0U)
         {
             const UINT mapped = MapVirtualKeyW(keyboard.VKey, MAPVK_VK_TO_VSC_EX);
@@ -573,6 +672,82 @@ std::vector<RawInputTransition> parse_raw_input(const std::span<const std::byte>
     append(RI_MOUSE_BUTTON_4_DOWN, RI_MOUSE_BUTTON_4_UP, InputMouseButton::x1);
     append(RI_MOUSE_BUTTON_5_DOWN, RI_MOUSE_BUTTON_5_UP, InputMouseButton::x2);
     return transitions;
+}
+
+std::optional<RawInputTransition> decode_low_level_keyboard_input(const WPARAM message,
+                                                                  const KBDLLHOOKSTRUCT &event) noexcept
+{
+    bool pressed = false;
+    switch (message)
+    {
+    case WM_KEYDOWN:
+    case WM_SYSKEYDOWN:
+        pressed = true;
+        break;
+    case WM_KEYUP:
+    case WM_SYSKEYUP:
+        break;
+    default:
+        return std::nullopt;
+    }
+
+    std::uint16_t scan_code = static_cast<std::uint16_t>(event.scanCode & 0xFFFFU);
+    bool extended = (event.flags & LLKHF_EXTENDED) != 0U || is_extended_virtual_key(event.vkCode);
+    if (scan_code == 0U)
+    {
+        const UINT mapped = MapVirtualKeyW(event.vkCode, MAPVK_VK_TO_VSC_EX);
+        scan_code = static_cast<std::uint16_t>(mapped & 0xFFU);
+        extended = extended || (mapped & 0xFF00U) != 0U;
+    }
+    if (scan_code == 0U)
+    {
+        return std::nullopt;
+    }
+
+    return RawInputTransition{{InputDeviceKind::keyboard, scan_code, extended}, pressed};
+}
+
+std::optional<RawInputTransition> decode_low_level_mouse_input(const WPARAM message,
+                                                               const MSLLHOOKSTRUCT &event) noexcept
+{
+    InputMouseButton button{};
+    bool pressed = false;
+    switch (message)
+    {
+    case WM_LBUTTONDOWN:
+        button = InputMouseButton::left;
+        pressed = true;
+        break;
+    case WM_LBUTTONUP:
+        button = InputMouseButton::left;
+        break;
+    case WM_RBUTTONDOWN:
+        button = InputMouseButton::right;
+        pressed = true;
+        break;
+    case WM_RBUTTONUP:
+        button = InputMouseButton::right;
+        break;
+    case WM_MBUTTONDOWN:
+        button = InputMouseButton::middle;
+        pressed = true;
+        break;
+    case WM_MBUTTONUP:
+        button = InputMouseButton::middle;
+        break;
+    case WM_XBUTTONDOWN:
+    case WM_XBUTTONUP:
+        button = HIWORD(event.mouseData) == XBUTTON1 ? InputMouseButton::x1 : InputMouseButton::x2;
+        pressed = message == WM_XBUTTONDOWN;
+        break;
+    default:
+        return std::nullopt;
+    }
+
+    return RawInputTransition{
+        {InputDeviceKind::mouse, static_cast<std::uint16_t>(button), false},
+        pressed,
+    };
 }
 
 InputStateSnapshot HotkeyStateMachine::configure(const InputConfiguration &configuration,
@@ -783,12 +958,13 @@ class GlobalInputService::Impl
              word_parameter == WM_SYSKEYUP))
         {
             const auto *event = reinterpret_cast<const KBDLLHOOKSTRUCT *>(long_parameter);
-            if ((event->flags & LLKHF_INJECTED) == 0U)
+            const std::optional<RawInputTransition> transition =
+                decode_low_level_keyboard_input(word_parameter, *event);
+            if (transition)
             {
-                const bool pressed = word_parameter == WM_KEYDOWN || word_parameter == WM_SYSKEYDOWN;
-                const bool extended = (event->flags & LLKHF_EXTENDED) != 0U;
-                const LPARAM packed = static_cast<LPARAM>((event->scanCode & 0xFFFFU) | (extended ? 1U << 16U : 0U) |
-                                                          (pressed ? 1U << 17U : 0U));
+                const LPARAM packed =
+                    static_cast<LPARAM>(transition->key.code | (transition->key.extended ? 1U << 16U : 0U) |
+                                        (transition->pressed ? 1U << 17U : 0U));
                 const HWND window = service->window_.load(std::memory_order_acquire);
                 if (window != nullptr)
                 {
@@ -806,49 +982,12 @@ class GlobalInputService::Impl
         if (code == HC_ACTION && service != nullptr)
         {
             const auto *event = reinterpret_cast<const MSLLHOOKSTRUCT *>(long_parameter);
-            if ((event->flags & LLMHF_INJECTED) == 0U)
+            const std::optional<RawInputTransition> transition = decode_low_level_mouse_input(word_parameter, *event);
+            const HWND window = service->window_.load(std::memory_order_acquire);
+            if (transition && window != nullptr)
             {
-                InputMouseButton button{};
-                bool pressed = false;
-                bool recognized = true;
-                switch (word_parameter)
-                {
-                case WM_LBUTTONDOWN:
-                    button = InputMouseButton::left;
-                    pressed = true;
-                    break;
-                case WM_LBUTTONUP:
-                    button = InputMouseButton::left;
-                    break;
-                case WM_RBUTTONDOWN:
-                    button = InputMouseButton::right;
-                    pressed = true;
-                    break;
-                case WM_RBUTTONUP:
-                    button = InputMouseButton::right;
-                    break;
-                case WM_MBUTTONDOWN:
-                    button = InputMouseButton::middle;
-                    pressed = true;
-                    break;
-                case WM_MBUTTONUP:
-                    button = InputMouseButton::middle;
-                    break;
-                case WM_XBUTTONDOWN:
-                case WM_XBUTTONUP:
-                    button = HIWORD(event->mouseData) == XBUTTON1 ? InputMouseButton::x1 : InputMouseButton::x2;
-                    pressed = word_parameter == WM_XBUTTONDOWN;
-                    break;
-                default:
-                    recognized = false;
-                    break;
-                }
-
-                const HWND window = service->window_.load(std::memory_order_acquire);
-                if (recognized && window != nullptr)
-                {
-                    PostMessageW(window, kHookMouseMessage, static_cast<WPARAM>(button), pressed ? 1 : 0);
-                }
+                PostMessageW(window, kHookMouseMessage, static_cast<WPARAM>(transition->key.code),
+                             transition->pressed ? 1 : 0);
             }
         }
         return CallNextHookEx(nullptr, code, word_parameter, long_parameter);
@@ -955,8 +1094,19 @@ class GlobalInputService::Impl
         if (RegisterRawInputDevices(devices.data(), static_cast<UINT>(devices.size()), sizeof(RAWINPUTDEVICE)))
         {
             raw_input_registered_ = true;
+            hook_owner_.store(this, std::memory_order_release);
+            low_level_hook_ = SetWindowsHookExW(WH_KEYBOARD_LL, low_level_keyboard_proc, GetModuleHandleW(nullptr), 0U);
+            low_level_mouse_hook_ = SetWindowsHookExW(WH_MOUSE_LL, low_level_mouse_proc, GetModuleHandleW(nullptr), 0U);
+            if (low_level_hook_ == nullptr || low_level_mouse_hook_ == nullptr)
+            {
+                const DWORD hook_error = GetLastError();
+                hook_owner_.store(nullptr, std::memory_order_release);
+                log_diagnostic(DiagnosticLevel::warning, "input.keyboard_hook_unavailable",
+                               "Raw Input is active, but the low-level input backend could not be installed.",
+                               NativeErrorStatus{NativeErrorDomain::win32, hook_error});
+            }
             log_diagnostic(DiagnosticLevel::information, "input.raw_input_ready",
-                           "Raw Input keyboard and mouse capture is active.");
+                           "Raw Input is active with low-level keyboard redundancy.");
             return;
         }
 
@@ -987,6 +1137,11 @@ class GlobalInputService::Impl
 
     void cleanup() noexcept
     {
+        const HWND timer_window = window_.load(std::memory_order_acquire);
+        if (timer_window != nullptr)
+        {
+            KillTimer(timer_window, kKeyboardPollingTimerId);
+        }
         unregister_hotkeys(active_plan_);
         if (const auto reset = state_machine_.reset_pressed_keys())
         {
@@ -1048,6 +1203,8 @@ class GlobalInputService::Impl
         }
         case kHookKeyboardMessage:
         {
+            // Cloud clients may omit keyboard Raw Input while still forwarding low-level injected events.
+            // The shared state machine suppresses duplicate transitions when both sources are available.
             const std::uint16_t scan_code = static_cast<std::uint16_t>(long_parameter & 0xFFFF);
             const bool extended = (long_parameter & (1 << 16)) != 0;
             const bool pressed = (long_parameter & (1 << 17)) != 0;
@@ -1056,12 +1213,26 @@ class GlobalInputService::Impl
         }
         case kHookMouseMessage:
         {
+            if (active_backend_ != InputCaptureBackend::low_level_hook)
+            {
+                return 0;
+            }
             handle_input_transition({InputDeviceKind::mouse, static_cast<std::uint16_t>(word_parameter), false},
                                     long_parameter != 0);
             return 0;
         }
+        case WM_TIMER:
+            if (word_parameter == kKeyboardPollingTimerId && active_backend_ == InputCaptureBackend::low_level_hook)
+            {
+                poll_keyboard_state();
+            }
+            return 0;
         case WM_HOTKEY:
         {
+            if (active_backend_ != InputCaptureBackend::raw_input)
+            {
+                return 0;
+            }
             const int identifier = static_cast<int>(word_parameter);
             const auto binding = std::ranges::find_if(active_plan_.registered_hotkeys,
                                                       [identifier](const RegisteredHotkeyBinding &candidate)
@@ -1076,6 +1247,10 @@ class GlobalInputService::Impl
             return 0;
         }
         case WM_INPUT:
+            if (active_backend_ != InputCaptureBackend::raw_input)
+            {
+                return 0;
+            }
             try
             {
                 handle_raw_input(reinterpret_cast<HRAWINPUT>(long_parameter));
@@ -1114,14 +1289,38 @@ class GlobalInputService::Impl
 
     [[nodiscard]] InputApplyResult apply_configuration_on_thread(const InputConfiguration &configuration)
     {
+        if (configuration.input_backend == InputCaptureBackend::low_level_hook && !low_level_backend_available())
+        {
+            return {false, ERROR_HOOK_NOT_INSTALLED, std::nullopt,
+                    "Low-level keyboard and mouse hooks are not available."};
+        }
+
+        InputConfiguration effective_configuration = configuration;
+        if (configuration.input_backend == InputCaptureBackend::raw_input && !raw_input_registered_)
+        {
+            effective_configuration.input_backend = InputCaptureBackend::low_level_hook;
+        }
+
         InputBindingPlan candidate;
         try
         {
-            candidate = build_input_binding_plan(configuration);
+            candidate = build_input_binding_plan(effective_configuration);
         }
         catch (const std::exception &error)
         {
             return {false, ERROR_INVALID_DATA, std::nullopt, error.what()};
+        }
+
+        const HWND window = window_.load(std::memory_order_acquire);
+        const bool needs_keyboard_polling =
+            effective_configuration.input_backend == InputCaptureBackend::low_level_hook &&
+            !candidate.polling_keys.empty();
+        if (needs_keyboard_polling &&
+            SetTimer(window, kKeyboardPollingTimerId, kKeyboardPollingIntervalMs, nullptr) == 0U)
+        {
+            const DWORD timer_error = GetLastError();
+            return {false, timer_error == ERROR_SUCCESS ? ERROR_FUNCTION_FAILED : timer_error, std::nullopt,
+                    "Keyboard polling timer could not be started."};
         }
 
         unregister_hotkeys(active_plan_);
@@ -1173,9 +1372,14 @@ class GlobalInputService::Impl
         }
 
         active_plan_ = std::move(candidate);
+        active_backend_ = effective_configuration.input_backend;
+        if (!needs_keyboard_polling)
+        {
+            KillTimer(window, kKeyboardPollingTimerId);
+        }
         modifier_keys_.clear();
         configured_ = true;
-        publish(state_machine_.configure(configuration, active_plan_.raw_bindings));
+        publish(state_machine_.configure(effective_configuration, active_plan_.raw_bindings));
         return {true, ERROR_SUCCESS, std::nullopt, {}};
     }
 
@@ -1267,6 +1471,48 @@ class GlobalInputService::Impl
         }
     }
 
+    void poll_keyboard_state()
+    {
+        struct Sample
+        {
+            InputPhysicalKey key;
+            bool pressed;
+        };
+
+        std::vector<Sample> samples;
+        samples.reserve(active_plan_.polling_keys.size());
+        for (const InputPollingKey &polling_key : active_plan_.polling_keys)
+        {
+            const SHORT state = GetAsyncKeyState(static_cast<int>(polling_key.virtual_key));
+            samples.push_back({polling_key.key, (state & static_cast<SHORT>(0x8000)) != 0});
+        }
+
+        const auto process_modifiers = [this, &samples](const bool pressed)
+        {
+            for (const Sample sample : samples)
+            {
+                if (modifier_for_key(sample.key) != InputModifiers::none && sample.pressed == pressed)
+                {
+                    handle_input_transition(sample.key, sample.pressed);
+                }
+            }
+        };
+        process_modifiers(true);
+        for (const Sample sample : samples)
+        {
+            if (modifier_for_key(sample.key) == InputModifiers::none)
+            {
+                handle_input_transition(sample.key, sample.pressed);
+            }
+        }
+        process_modifiers(false);
+    }
+
+    [[nodiscard]] bool low_level_backend_available() const noexcept
+    {
+        return low_level_hook_ != nullptr && low_level_mouse_hook_ != nullptr;
+    }
+
     void publish(InputStateSnapshot snapshot) const
     {
         snapshot.configured = configured_;
@@ -1282,6 +1528,7 @@ class GlobalInputService::Impl
     std::atomic<HWND> window_ = nullptr;
     HotkeyStateMachine state_machine_;
     InputBindingPlan active_plan_;
+    InputCaptureBackend active_backend_ = InputCaptureBackend::raw_input;
     std::vector<InputPhysicalKey> modifier_keys_;
     HHOOK low_level_hook_ = nullptr;
     HHOOK low_level_mouse_hook_ = nullptr;

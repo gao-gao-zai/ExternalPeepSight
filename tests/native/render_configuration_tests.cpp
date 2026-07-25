@@ -110,7 +110,8 @@ void write_bytes(const std::filesystem::path &path, const std::vector<std::uint8
     const std::string image_asset = asset_id.empty() ? "null" : std::format("\"{}\"", asset_id);
     return std::format(
         R"({{
-          "schemaVersion":5,
+          "schemaVersion":6,
+          "inputBackend":"rawInput",
           "profiles":[{{
             "id":"11111111-1111-1111-1111-111111111111",
             "name":"Test",

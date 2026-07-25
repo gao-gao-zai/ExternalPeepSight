@@ -133,6 +133,10 @@ public static class ConfigurationValidator
         ValidateProfileSets(document, issues);
         ValidateAssets(document, options, issues);
         ValidateMonitorSelection(document.MonitorSelection, options, issues);
+        if (!Enum.IsDefined(document.InputBackend))
+        {
+            issues.Add(new ValidationIssue("$.inputBackend", "Input capture backend is invalid."));
+        }
         ValidateToasts(document.Toasts, issues);
         return new ConfigurationValidationResult(issues);
     }

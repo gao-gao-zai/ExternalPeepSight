@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstring>
@@ -15,6 +16,7 @@ namespace
 {
 using external_peepsight::HotkeyStateMachine;
 using external_peepsight::InputActivationMode;
+using external_peepsight::InputCaptureBackend;
 using external_peepsight::InputConfiguration;
 using external_peepsight::InputDeviceKind;
 using external_peepsight::InputHotkeyBinding;
@@ -26,6 +28,7 @@ using external_peepsight::InputSwitchOperation;
 using external_peepsight::InputVisibilityRule;
 using external_peepsight::RawInputBinding;
 
+constexpr UINT kHookKeyboardMessage = WM_APP + 2U;
 constexpr InputKeyIdentity kKeyA{InputDeviceKind::keyboard, 0x1EU, false, InputModifiers::none};
 constexpr InputKeyIdentity kKeyB{InputDeviceKind::keyboard, 0x30U, false, InputModifiers::none};
 constexpr InputKeyIdentity kCtrlKeyA{InputDeviceKind::keyboard, 0x1EU, false, InputModifiers::ctrl};
@@ -88,7 +91,8 @@ BOOL CALLBACK find_input_window(_In_ const HWND window, _In_ const LPARAM parame
 [[nodiscard]] std::string valid_snapshot(const std::string_view modifiers = "none",
                                          const std::string_view selected_profile_id = "profile-a")
 {
-    return "{\"schemaVersion\":5,\"profiles\":[{\"id\":\"profile-a\",\"switches\":{\"visibilityRule\":\"either\","
+    return "{\"schemaVersion\":6,\"inputBackend\":\"rawInput\",\"profiles\":[{\"id\":\"profile-a\",\"switches\":{"
+           "\"visibilityRule\":\"either\","
            "\"initialStateA\":false,\"initialStateB\":true,"
            "\"switchA\":{\"mode\":\"toggle\",\"toggleKey\":{\"device\":\"keyboard\",\"code\":30,"
            "\"extended\":false,\"modifiers\":\"" +
@@ -257,6 +261,65 @@ TEST(InputBindingPlan, AssignsMouseBindingsToRawInputEvenWithModifiers)
     EXPECT_TRUE(plan.registered_hotkeys.empty());
 }
 
+TEST(InputBindingPlan, LowLevelHookRoutesModifiedKeyboardBindingsToHookTransitions)
+{
+    InputConfiguration configuration = unbound_configuration();
+    configuration.input_backend = InputCaptureBackend::low_level_hook;
+    configuration.switch_a = toggle_binding(kCtrlKeyA);
+
+    const auto plan = external_peepsight::build_input_binding_plan(configuration);
+
+    ASSERT_EQ(1U, plan.raw_bindings.size());
+    EXPECT_EQ(kCtrlKeyA, plan.raw_bindings.front().key);
+    EXPECT_TRUE(plan.registered_hotkeys.empty());
+}
+
+TEST(InputBindingPlan, LowLevelHookAddsMainKeyAndPhysicalModifierPollingKeys)
+{
+    InputConfiguration configuration = unbound_configuration();
+    configuration.input_backend = InputCaptureBackend::low_level_hook;
+    configuration.switch_a = toggle_binding(kCtrlKeyA);
+
+    const auto plan = external_peepsight::build_input_binding_plan(configuration);
+
+    ASSERT_EQ(3U, plan.polling_keys.size());
+    EXPECT_NE(std::ranges::find(plan.polling_keys,
+                                external_peepsight::InputPollingKey{{InputDeviceKind::keyboard, 0x1EU, false}, 0x41U}),
+              plan.polling_keys.end());
+    EXPECT_NE(
+        std::ranges::find(plan.polling_keys,
+                          external_peepsight::InputPollingKey{{InputDeviceKind::keyboard, 0x1DU, false}, VK_LCONTROL}),
+        plan.polling_keys.end());
+    EXPECT_NE(
+        std::ranges::find(plan.polling_keys,
+                          external_peepsight::InputPollingKey{{InputDeviceKind::keyboard, 0x1DU, true}, VK_RCONTROL}),
+        plan.polling_keys.end());
+}
+
+TEST(InputBindingPlan, LowLevelHookDeduplicatesPollingKeysAcrossModifiedBindings)
+{
+    InputConfiguration configuration = unbound_configuration();
+    configuration.input_backend = InputCaptureBackend::low_level_hook;
+    configuration.switch_a = toggle_binding(kCtrlKeyA);
+    configuration.switch_b = toggle_binding({InputDeviceKind::keyboard, 0x1EU, false, InputModifiers::shift});
+
+    const auto plan = external_peepsight::build_input_binding_plan(configuration);
+
+    EXPECT_EQ(5U, plan.polling_keys.size());
+    EXPECT_EQ(1U, std::ranges::count(plan.polling_keys, external_peepsight::InputPollingKey{
+                                                            {InputDeviceKind::keyboard, 0x1EU, false}, 0x41U}));
+}
+
+TEST(InputBindingPlan, RawInputDoesNotCreateKeyboardPollingPlan)
+{
+    InputConfiguration configuration = unbound_configuration();
+    configuration.switch_a = toggle_binding(kCtrlKeyA);
+
+    const auto plan = external_peepsight::build_input_binding_plan(configuration);
+
+    EXPECT_TRUE(plan.polling_keys.empty());
+}
+
 TEST(InputBindingPlan, RejectsInvalidMouseButtonCodesAndKeyboardExtendedFlag)
 {
     InputConfiguration zero_code = unbound_configuration();
@@ -334,6 +397,7 @@ TEST(InputConfigurationParser, AcceptsFlagEnumFormattingAndRejectsUnknownContent
     winrt::init_apartment(winrt::apartment_type::multi_threaded);
 
     const InputConfiguration parsed = external_peepsight::parse_input_configuration(valid_snapshot("ctrl, shift"));
+    EXPECT_EQ(InputCaptureBackend::raw_input, parsed.input_backend);
     EXPECT_EQ(InputModifiers::ctrl | InputModifiers::shift, parsed.switch_a.toggle_key->modifiers);
 
     std::string unknown_modifier = valid_snapshot("meta");
@@ -374,6 +438,15 @@ TEST(InputConfigurationParser, ParsesMouseButtonIdentity)
     EXPECT_EQ(static_cast<std::uint16_t>(InputMouseButton::x1), parsed.switch_a.toggle_key->code);
 }
 
+TEST(InputConfigurationParser, RejectsUnknownInputBackend)
+{
+    winrt::init_apartment(winrt::apartment_type::multi_threaded);
+    std::string snapshot = valid_snapshot();
+    snapshot.replace(snapshot.find("\"rawInput\""), std::string("\"rawInput\"").size(), "\"unsupported\"");
+
+    EXPECT_THROW(static_cast<void>(external_peepsight::parse_input_configuration(snapshot)), std::invalid_argument);
+}
+
 TEST(RawKeyboardInput, AcceptsKeyboardPayloadSmallerThanRawInputUnion)
 {
     RAWINPUT input{};
@@ -389,6 +462,24 @@ TEST(RawKeyboardInput, AcceptsKeyboardPayloadSmallerThanRawInputUnion)
 
     ASSERT_EQ(1U, transitions.size());
     EXPECT_EQ((external_peepsight::InputPhysicalKey{InputDeviceKind::keyboard, 0x31U, false}), transitions[0].key);
+    EXPECT_TRUE(transitions[0].pressed);
+}
+
+TEST(RawKeyboardInput, NormalizesArrowUpWhenExtendedFlagIsMissing)
+{
+    RAWINPUT input{};
+    input.header.dwType = RIM_TYPEKEYBOARD;
+    input.data.keyboard.VKey = VK_UP;
+    input.data.keyboard.MakeCode = 0x48U;
+    input.data.keyboard.Flags = 0U;
+    constexpr std::size_t keyboard_payload_size = offsetof(RAWINPUT, data) + sizeof(RAWKEYBOARD);
+
+    const auto *bytes = reinterpret_cast<const std::byte *>(&input);
+    const std::vector<external_peepsight::RawInputTransition> transitions =
+        external_peepsight::parse_raw_input({bytes, keyboard_payload_size});
+
+    ASSERT_EQ(1U, transitions.size());
+    EXPECT_EQ((external_peepsight::InputPhysicalKey{InputDeviceKind::keyboard, 0x48U, true}), transitions[0].key);
     EXPECT_TRUE(transitions[0].pressed);
 }
 
@@ -413,6 +504,50 @@ TEST(RawMouseInput, DecodesMultipleButtonTransitions)
     EXPECT_FALSE(transitions[1].pressed);
 }
 
+TEST(LowLevelKeyboardInput, AcceptsInjectedKeyboardTransitions)
+{
+    KBDLLHOOKSTRUCT event{};
+    event.vkCode = 0x4EU;
+    event.scanCode = 0x31U;
+    event.flags = LLKHF_INJECTED;
+
+    const std::optional<external_peepsight::RawInputTransition> transition =
+        external_peepsight::decode_low_level_keyboard_input(WM_KEYDOWN, event);
+
+    ASSERT_TRUE(transition.has_value());
+    EXPECT_EQ((external_peepsight::InputPhysicalKey{InputDeviceKind::keyboard, 0x31U, false}), transition->key);
+    EXPECT_TRUE(transition->pressed);
+}
+
+TEST(LowLevelKeyboardInput, MapsInjectedExtendedKeyWhenScanCodeIsMissing)
+{
+    KBDLLHOOKSTRUCT event{};
+    event.vkCode = VK_UP;
+    event.flags = LLKHF_INJECTED;
+
+    const std::optional<external_peepsight::RawInputTransition> transition =
+        external_peepsight::decode_low_level_keyboard_input(WM_KEYUP, event);
+
+    ASSERT_TRUE(transition.has_value());
+    EXPECT_EQ((external_peepsight::InputPhysicalKey{InputDeviceKind::keyboard, 0x48U, true}), transition->key);
+    EXPECT_FALSE(transition->pressed);
+}
+
+TEST(LowLevelMouseInput, AcceptsInjectedMouseTransitions)
+{
+    MSLLHOOKSTRUCT event{};
+    event.mouseData = static_cast<DWORD>(XBUTTON1) << 16U;
+    event.flags = LLMHF_INJECTED;
+
+    const std::optional<external_peepsight::RawInputTransition> transition =
+        external_peepsight::decode_low_level_mouse_input(WM_XBUTTONDOWN, event);
+
+    ASSERT_TRUE(transition.has_value());
+    EXPECT_EQ(kMouseX1.device, transition->key.device);
+    EXPECT_EQ(kMouseX1.code, transition->key.code);
+    EXPECT_TRUE(transition->pressed);
+}
+
 TEST(GlobalInputService, StartsAppliesConfigurationAndAllowsRepeatedStop)
 {
     std::atomic<unsigned int> callback_count = 0U;
@@ -434,6 +569,26 @@ TEST(GlobalInputService, StartsAppliesConfigurationAndAllowsRepeatedStop)
     EXPECT_TRUE(result.applied);
     EXPECT_EQ(ERROR_SUCCESS, result.win32_error);
     EXPECT_GE(callback_count.load(std::memory_order_relaxed), 1U);
+    EXPECT_TRUE(last_visible.load(std::memory_order_acquire));
+}
+
+TEST(GlobalInputService, RawInputBackendAcceptsLowLevelKeyboardRedundancy)
+{
+    std::atomic<bool> last_visible = false;
+    external_peepsight::GlobalInputService service([&last_visible](const external_peepsight::InputStateSnapshot state)
+                                                   { last_visible.store(state.visible, std::memory_order_release); });
+    InputConfiguration configuration = unbound_configuration();
+    configuration.switch_a = toggle_binding(kKeyA);
+
+    service.start();
+    const external_peepsight::InputApplyResult result = service.apply_configuration(configuration);
+    const HWND input_window = find_current_process_input_window();
+    const LPARAM packed_key_down = static_cast<LPARAM>(kKeyA.code | (1U << 17U));
+    SendMessageW(input_window, kHookKeyboardMessage, 0U, packed_key_down);
+    service.stop();
+
+    ASSERT_TRUE(result.applied);
+    ASSERT_NE(nullptr, input_window);
     EXPECT_TRUE(last_visible.load(std::memory_order_acquire));
 }
 

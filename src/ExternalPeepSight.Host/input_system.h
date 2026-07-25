@@ -45,6 +45,13 @@ enum class InputDeviceKind : std::uint8_t
     mouse,
 };
 
+/// Selects the Windows input API used to capture configured bindings.
+enum class InputCaptureBackend : std::uint8_t
+{
+    raw_input,
+    low_level_hook,
+};
+
 /// Identifies a bindable physical mouse button.
 enum class InputMouseButton : std::uint16_t
 {
@@ -137,6 +144,8 @@ struct InputHotkeyBinding
 /// Defines the complete input configuration consumed by the Host.
 struct InputConfiguration
 {
+    /// Windows input API used to capture configured bindings.
+    InputCaptureBackend input_backend = InputCaptureBackend::raw_input;
     /// Rule that combines the two logical switches.
     InputVisibilityRule visibility_rule = InputVisibilityRule::switch_a;
     /// Initial state of logical switch A.
@@ -193,13 +202,26 @@ struct RegisteredHotkeyBinding
     InputAction action;
 };
 
+/// Identifies one keyboard key sampled by GetAsyncKeyState.
+struct InputPollingKey
+{
+    /// Physical keyboard key represented by the sampled virtual key.
+    InputPhysicalKey key;
+    /// Virtual-key code passed to GetAsyncKeyState.
+    UINT virtual_key;
+
+    bool operator==(const InputPollingKey &) const = default;
+};
+
 /// Validated backend assignment for one complete input configuration.
 struct InputBindingPlan
 {
-    /// Bindings handled by Raw Input or its low-level-hook fallback.
+    /// Bindings handled by the selected raw transition backend.
     std::vector<RawInputBinding> raw_bindings;
     /// Bindings handled exclusively by RegisterHotKey.
     std::vector<RegisteredHotkeyBinding> registered_hotkeys;
+    /// Keyboard keys sampled as a fallback by the low-level hook backend.
+    std::vector<InputPollingKey> polling_keys;
 };
 
 /// Current logical input state published by the Input thread.
@@ -241,6 +263,14 @@ struct InputApplyResult
 
 /// Decodes all keyboard or mouse button transitions in one complete Raw Input payload.
 [[nodiscard]] std::vector<RawInputTransition> parse_raw_input(std::span<const std::byte> payload);
+
+/// Decodes one low-level keyboard hook message, including remote-client injected input.
+[[nodiscard]] std::optional<RawInputTransition> decode_low_level_keyboard_input(WPARAM message,
+                                                                                const KBDLLHOOKSTRUCT &event) noexcept;
+
+/// Decodes one low-level mouse hook message, including remote-client injected input.
+[[nodiscard]] std::optional<RawInputTransition> decode_low_level_mouse_input(WPARAM message,
+                                                                             const MSLLHOOKSTRUCT &event) noexcept;
 
 /// Deterministic logical-switch state machine shared by all input backends.
 class HotkeyStateMachine

@@ -28,7 +28,7 @@ public static class ConfigurationJson
     /// <summary>
     /// Gets the newest schema version supported by this build.
     /// </summary>
-    public const int CurrentSchemaVersion = 5;
+    public const int CurrentSchemaVersion = 6;
 
     private static readonly JsonSerializerOptions CompactOptions = CreateOptions(false);
     private static readonly JsonSerializerOptions IndentedOptions = CreateOptions(true);
@@ -73,11 +73,12 @@ public static class ConfigurationJson
             int version = GetSchemaVersion(root);
             JsonObject migrated = version switch
             {
-                0 => MigrateVersionFour(MigrateVersionThree(MigrateVersionTwo(MigrateVersionOne(MigrateVersionZero(root))))),
-                1 => MigrateVersionFour(MigrateVersionThree(MigrateVersionTwo(MigrateVersionOne(root)))),
-                2 => MigrateVersionFour(MigrateVersionThree(MigrateVersionTwo(root))),
-                3 => MigrateVersionFour(MigrateVersionThree(root)),
-                4 => MigrateVersionFour(root),
+                0 => MigrateVersionFive(MigrateVersionFour(MigrateVersionThree(MigrateVersionTwo(MigrateVersionOne(MigrateVersionZero(root)))))),
+                1 => MigrateVersionFive(MigrateVersionFour(MigrateVersionThree(MigrateVersionTwo(MigrateVersionOne(root))))),
+                2 => MigrateVersionFive(MigrateVersionFour(MigrateVersionThree(MigrateVersionTwo(root)))),
+                3 => MigrateVersionFive(MigrateVersionFour(MigrateVersionThree(root))),
+                4 => MigrateVersionFive(MigrateVersionFour(root)),
+                5 => MigrateVersionFive(root),
                 CurrentSchemaVersion => root,
                 > CurrentSchemaVersion => throw new ConfigurationFormatException(
                     $"Configuration schema version {version} is newer than supported version {CurrentSchemaVersion}."),
@@ -219,6 +220,14 @@ public static class ConfigurationJson
             }
         }
 
+        migrated["schemaVersion"] = CurrentSchemaVersion;
+        return migrated;
+    }
+
+    private static JsonObject MigrateVersionFive(JsonObject root)
+    {
+        var migrated = (JsonObject)root.DeepClone();
+        migrated["inputBackend"] ??= "rawInput";
         migrated["schemaVersion"] = CurrentSchemaVersion;
         return migrated;
     }
