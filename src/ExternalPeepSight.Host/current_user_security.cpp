@@ -70,6 +70,28 @@ using UniqueHandle = std::unique_ptr<void, HandleCloser>;
 }
 } // namespace
 
+bool is_current_process_elevated()
+{
+    HANDLE token_handle = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token_handle))
+    {
+        throw_last_error("OpenProcessToken elevation");
+    }
+    UniqueHandle token(token_handle);
+
+    TOKEN_ELEVATION elevation{};
+    DWORD returned_bytes = 0U;
+    if (!GetTokenInformation(token.get(), TokenElevation, &elevation, sizeof(elevation), &returned_bytes))
+    {
+        throw_last_error("GetTokenInformation elevation");
+    }
+    if (returned_bytes != sizeof(elevation))
+    {
+        throw NativeError(ERROR_INVALID_DATA, "GetTokenInformation elevation size");
+    }
+    return elevation.TokenIsElevated != 0U;
+}
+
 CurrentUserSecurity::CurrentUserSecurity() : sid_string_(current_user_sid())
 {
     const std::wstring sddl = L"D:P(A;;GA;;;SY)(A;;GA;;;" + sid_string_ + L")";

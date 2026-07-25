@@ -13,6 +13,8 @@ struct IpcEndpoint
     std::wstring pipe_name;
     /// Random hexadecimal Hello token.
     std::string handshake_token;
+    /// Whether the publishing Host process token is elevated.
+    bool elevated = false;
     /// Per-user endpoint discovery file.
     std::filesystem::path discovery_file;
     /// Per-user marker written before a graceful Host shutdown.

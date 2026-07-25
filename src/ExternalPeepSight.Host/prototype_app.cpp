@@ -68,6 +68,8 @@ constexpr UINT kInputStateChangedMessage = WM_APP + 4U;
 constexpr UINT kApplySnapshotMessage = WM_APP + 5U;
 constexpr UINT kShowToastMessage = WM_APP + 6U;
 constexpr UINT kScriptRuntimeUpdatedMessage = WM_APP + 7U;
+constexpr UINT kRestartHostMessage = WM_APP + 8U;
+constexpr int kRestartRequestedExitCode = 20;
 constexpr UINT_PTR kMetricsTimerId = 1U;
 constexpr UINT_PTR kShutdownTimerId = 2U;
 constexpr UINT_PTR kToastTimerId = 3U;
@@ -1415,7 +1417,15 @@ class OverlayApplication
                       }
                   }
               },
-              [this](const std::string_view payload_json) { return script_coordinator_.validate(payload_json); }),
+              [this](const std::string_view payload_json) { return script_coordinator_.validate(payload_json); },
+              [this]
+              {
+                  const HWND target = configuration_target_.load(std::memory_order_acquire);
+                  if (target == nullptr || !PostMessageW(target, kRestartHostMessage, 0U, 0))
+                  {
+                      throw IpcClientError(L"HostNotReady", L"The Host window is not ready to restart.");
+                  }
+              }),
           ipc_server_(ipc_endpoint, ipc_host_state_),
           ipc_thread_(HostThreadRole::ipc, [this](const std::stop_token stop_token) { ipc_server_.run(stop_token); }),
           renderer_(snapshots_)
@@ -1830,6 +1840,10 @@ class OverlayApplication
             }
             return 1;
         }
+        case kRestartHostMessage:
+            exit_code_ = kRestartRequestedExitCode;
+            DestroyWindow(window);
+            return 0;
         case kRebuildMonitorsMessage:
         case WM_DISPLAYCHANGE:
         case WM_DEVICECHANGE:
@@ -1837,6 +1851,7 @@ class OverlayApplication
             return 0;
         case kForegroundChangedMessage:
             reassert_topmost();
+            input_service_.notify_foreground_changed();
             return 0;
         case kInputStateChangedMessage:
             switch_visibility_ = (word_parameter & (1U << 2U)) != 0U;

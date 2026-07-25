@@ -102,6 +102,37 @@ struct RawInputTransition
     bool operator==(const RawInputTransition &) const = default;
 };
 
+/// Identifies the backend family that reported one physical input transition.
+enum class InputTransitionSource
+{
+    /// Raw Input or low-level hook event delivery.
+    captured_event,
+    /// Periodic GetAsyncKeyState sampling.
+    polling,
+};
+
+/// Merges physical input state reported by event capture and keyboard polling.
+class InputTransitionMerger
+{
+  public:
+    /// Updates one source and returns a transition only when the merged physical state changes.
+    [[nodiscard]] std::optional<RawInputTransition> handle(InputPhysicalKey key, bool pressed,
+                                                           InputTransitionSource source);
+
+    /// Clears all source state without producing release transitions.
+    void reset() noexcept;
+
+  private:
+    struct SourceState
+    {
+        InputPhysicalKey key;
+        bool captured_pressed;
+        bool polling_pressed;
+    };
+
+    std::vector<SourceState> states_;
+};
+
 /// Selects how a binding changes its logical switch.
 enum class InputActivationMode
 {
@@ -255,7 +286,7 @@ struct InputBindingPlan
     std::vector<RawInputBinding> raw_bindings;
     /// Bindings handled exclusively by RegisterHotKey.
     std::vector<RegisteredHotkeyBinding> registered_hotkeys;
-    /// Keyboard keys sampled as a fallback by the low-level hook backend.
+    /// Transition-backed keyboard keys sampled when Raw Input or hook delivery is unavailable.
     std::vector<InputPollingKey> polling_keys;
     /// Script bindings handled by Raw Input or the low-level hook backend.
     std::vector<ScriptInputBinding> script_bindings;
@@ -394,6 +425,9 @@ class GlobalInputService
 
     /// Applies configuration synchronously on the Input thread.
     [[nodiscard]] InputApplyResult apply_configuration(const InputConfiguration &configuration);
+
+    /// Refreshes compatibility capture after another application becomes foreground.
+    void notify_foreground_changed() noexcept;
 
     /// Requests shutdown and waits for the Input thread.
     void stop() noexcept;

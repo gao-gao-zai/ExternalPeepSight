@@ -1,5 +1,6 @@
 #include "ipc_endpoint.h"
 
+#include "current_user_security.h"
 #include "diagnostics.h"
 #include "ipc_protocol.h"
 
@@ -111,6 +112,7 @@ IpcEndpointRegistration::IpcEndpointRegistration(const std::wstring_view instanc
     const std::wstring validated = validate_instance_id(instance_id);
     endpoint_.pipe_name = random_pipe_name(validated);
     endpoint_.handshake_token = random_token();
+    endpoint_.elevated = is_current_process_elevated();
     endpoint_.discovery_file = discovery_path(validated);
     endpoint_.graceful_shutdown_file = graceful_shutdown_path(endpoint_.discovery_file);
     std::error_code removal_error;
@@ -196,6 +198,7 @@ void IpcEndpointRegistration::publish()
         output << "pipeName=" << narrow_ascii(endpoint_.pipe_name) << '\n';
         output << "token=" << endpoint_.handshake_token << '\n';
         output << "processId=" << GetCurrentProcessId() << '\n';
+        output << "elevated=" << (endpoint_.elevated ? 1 : 0) << '\n';
         output.flush();
         if (!output)
         {

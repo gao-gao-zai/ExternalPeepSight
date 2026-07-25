@@ -40,6 +40,7 @@ enum class MessageType
     set_monitor_selection,
     show_toast,
     validate_script,
+    restart_host,
     ack,
     error,
     host_state_changed,
@@ -174,6 +175,10 @@ void require_allowed_properties(const JsonObject &object, const std::initializer
     if (value == "ValidateScript")
     {
         return MessageType::validate_script;
+    }
+    if (value == "RestartHost")
+    {
+        return MessageType::restart_host;
     }
     if (value == "Ack")
     {
@@ -369,6 +374,25 @@ void require_allowed_properties(const JsonObject &object, const std::initializer
     return make_ack(envelope.request_id, ack);
 }
 
+[[nodiscard]] IpcSessionResult handle_restart_host(const ParsedEnvelope &envelope, const IpcHostState &host_state)
+{
+    if (envelope.payload.ValueType() == JsonValueType::Object)
+    {
+        require_allowed_properties(envelope.payload.GetObject(), {});
+    }
+    if (!host_state.restart_available())
+    {
+        return make_error(envelope.request_id, L"CommandNotAvailable",
+                          L"Host restart is not available in this Host instance.", false);
+    }
+
+    JsonObject ack;
+    ack.SetNamedValue(L"command", JsonValue::CreateStringValue(L"RestartHost"));
+    IpcSessionResult result = make_ack(envelope.request_id, ack);
+    result.restart_host = true;
+    return result;
+}
+
 [[nodiscard]] IpcSessionResult handle_authenticated_message(const ParsedEnvelope &envelope, IpcHostState &host_state)
 {
     switch (envelope.type)
@@ -381,6 +405,8 @@ void require_allowed_properties(const JsonObject &object, const std::initializer
         return handle_show_toast(envelope, host_state);
     case MessageType::validate_script:
         return handle_validate_script(envelope, host_state);
+    case MessageType::restart_host:
+        return handle_restart_host(envelope, host_state);
     case MessageType::hello:
         return make_error(envelope.request_id, L"AlreadyAuthenticated", L"The Hello handshake has already completed.",
                           false);
@@ -440,9 +466,10 @@ const std::wstring &IpcClientError::wide_message() const noexcept
     return message_;
 }
 
-IpcHostState::IpcHostState(SnapshotValidator validator, ToastHandler toast_handler, ScriptValidator script_validator)
+IpcHostState::IpcHostState(SnapshotValidator validator, ToastHandler toast_handler, ScriptValidator script_validator,
+                           RestartHandler restart_handler)
     : validator_(std::move(validator)), toast_handler_(std::move(toast_handler)),
-      script_validator_(std::move(script_validator))
+      script_validator_(std::move(script_validator)), restart_handler_(std::move(restart_handler))
 {
 }
 
@@ -518,6 +545,20 @@ std::string IpcHostState::validate_script(std::string payload_json) const
     {
         throw IpcClientError(L"InvalidScript", winrt::to_hstring(error.what()).c_str());
     }
+}
+
+bool IpcHostState::restart_available() const noexcept
+{
+    return static_cast<bool>(restart_handler_);
+}
+
+void IpcHostState::restart_host() const
+{
+    if (!restart_handler_)
+    {
+        throw IpcClientError(L"CommandNotAvailable", L"Host restart is not available in this Host instance.");
+    }
+    restart_handler_();
 }
 
 IpcSession::IpcSession(IpcHostState &host_state, std::string handshake_token)

@@ -32,16 +32,32 @@ internal interface IScriptValidationSession
         CancellationToken cancellationToken = default);
 }
 
+internal enum HostLaunchFailure
+{
+    ElevationCancelled,
+}
+
+internal interface IHostLaunchModeSession
+{
+    public event EventHandler<HostLaunchFailure>? HostLaunchFailed;
+
+    public Task SetElevatedInputCompatibilityAsync(
+        bool enabled,
+        CancellationToken cancellationToken = default);
+}
+
 /// <summary>
 /// Maintains the authenticated settings connection to the native Host.
 /// </summary>
-public sealed class HostClient : IAsyncDisposable, IHostSession, IScriptValidationSession
+public sealed class HostClient : IAsyncDisposable, IHostSession, IScriptValidationSession, IHostLaunchModeSession
 {
     private const int ProtocolVersion = 1;
     private const int MaximumMessageBytes = 1024 * 1024;
+    private const int ErrorCancelled = 1223;
     private const ulong MaximumJsonInteger = 9_007_199_254_740_991;
     private readonly string instanceId;
     private readonly bool startHostIfMissing;
+    private readonly bool uiProcessElevated;
     private readonly CancellationTokenSource shutdown = new();
     private readonly SemaphoreSlim writeLock = new(1, 1);
     private readonly object streamLock = new();
@@ -50,16 +66,36 @@ public sealed class HostClient : IAsyncDisposable, IHostSession, IScriptValidati
     private NamedPipeClientStream? stream;
     private Task? connectionLoop;
     private SynchronizationContext? eventContext;
+    private bool requireElevatedInputCompatibility;
+    private bool? connectedHostElevated;
     private bool isConnected;
 
     /// <summary>
     /// Creates a client for one Host instance namespace.
     /// </summary>
-    public HostClient(string instanceId = "default", bool startHostIfMissing = true)
+    public HostClient(
+        string instanceId = "default",
+        bool startHostIfMissing = true,
+        bool requireElevatedInputCompatibility = false)
+        : this(
+            instanceId,
+            startHostIfMissing,
+            requireElevatedInputCompatibility,
+            HostProcessManager.IsCurrentProcessElevated())
+    {
+    }
+
+    internal HostClient(
+        string instanceId,
+        bool startHostIfMissing,
+        bool requireElevatedInputCompatibility,
+        bool uiProcessElevated)
     {
         HostEndpoint.ValidateInstanceId(instanceId);
         this.instanceId = instanceId;
         this.startHostIfMissing = startHostIfMissing;
+        this.requireElevatedInputCompatibility = requireElevatedInputCompatibility;
+        this.uiProcessElevated = uiProcessElevated;
         snapshotBatcher = new SnapshotApplyBatcher(ApplySnapshotAsync);
     }
 
@@ -77,6 +113,14 @@ public sealed class HostClient : IAsyncDisposable, IHostSession, IScriptValidati
     /// Raised when the connected Host completes a user-requested graceful exit.
     /// </summary>
     public event EventHandler? HostExited;
+
+    event EventHandler<HostLaunchFailure>? IHostLaunchModeSession.HostLaunchFailed
+    {
+        add => hostLaunchFailed += value;
+        remove => hostLaunchFailed -= value;
+    }
+
+    private event EventHandler<HostLaunchFailure>? hostLaunchFailed;
 
     /// <summary>
     /// Gets whether an authenticated Host connection is active.
@@ -172,6 +216,25 @@ public sealed class HostClient : IAsyncDisposable, IHostSession, IScriptValidati
         CancellationToken cancellationToken = default) =>
         SendRequestAsync("ValidateScript", payload, cancellationToken);
 
+    async Task IHostLaunchModeSession.SetElevatedInputCompatibilityAsync(
+        bool enabled,
+        CancellationToken cancellationToken)
+    {
+        Volatile.Write(ref requireElevatedInputCompatibility, enabled);
+        bool requireElevation = ResolveHostElevationRequirement(enabled, uiProcessElevated);
+        bool restartRequired;
+        lock (streamLock)
+        {
+            restartRequired = stream is not null &&
+                              connectedHostElevated is bool elevated &&
+                              elevated != requireElevation;
+        }
+        if (restartRequired)
+        {
+            await SendRequestAsync("RestartHost", payload: null, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
@@ -214,10 +277,15 @@ public sealed class HostClient : IAsyncDisposable, IHostSession, IScriptValidati
 
             NamedPipeClientStream? connectedStream = null;
             Task? receiveLoop = null;
+            bool waitForLaunchModeChange = false;
+            bool cancelledElevationMode = false;
             try
             {
+                bool requireElevation = ResolveHostElevationRequirement(
+                    Volatile.Read(ref requireElevatedInputCompatibility),
+                    uiProcessElevated);
                 HostEndpoint? endpoint =
-                    HostProcessManager.FindOrStart(instanceId, startHostIfMissing);
+                    HostProcessManager.FindOrStart(instanceId, startHostIfMissing, requireElevation);
                 if (endpoint is null)
                 {
                     await Task.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
@@ -235,6 +303,7 @@ public sealed class HostClient : IAsyncDisposable, IHostSession, IScriptValidati
                 lock (streamLock)
                 {
                     stream = connectedStream;
+                    connectedHostElevated = endpoint.IsElevated;
                 }
 
                 receiveLoop = ReceiveLoopAndFailPendingAsync(
@@ -242,12 +311,33 @@ public sealed class HostClient : IAsyncDisposable, IHostSession, IScriptValidati
                     cancellationToken);
                 await SendRequestAsync("Hello", new { token = endpoint.Token }, cancellationToken)
                     .ConfigureAwait(false);
-                SetConnected(true);
-                JsonElement state = await SendRequestAsync("GetState", payload: null, cancellationToken)
-                    .ConfigureAwait(false);
-                RaiseStateChanged(state);
-                retryDelay = TimeSpan.FromMilliseconds(100);
-                await receiveLoop.ConfigureAwait(false);
+                requireElevation = ResolveHostElevationRequirement(
+                    Volatile.Read(ref requireElevatedInputCompatibility),
+                    uiProcessElevated);
+                if (endpoint.IsElevated != requireElevation)
+                {
+                    await SendRequestAsync("RestartHost", payload: null, cancellationToken)
+                        .ConfigureAwait(false);
+                    await receiveLoop.ConfigureAwait(false);
+                }
+                else
+                {
+                    SetConnected(true);
+                    JsonElement state = await SendRequestAsync("GetState", payload: null, cancellationToken)
+                        .ConfigureAwait(false);
+                    RaiseStateChanged(state);
+                    retryDelay = TimeSpan.FromMilliseconds(100);
+                    await receiveLoop.ConfigureAwait(false);
+                }
+            }
+            catch (Win32Exception exception) when (
+                exception.NativeErrorCode == ErrorCancelled &&
+                Volatile.Read(ref requireElevatedInputCompatibility))
+            {
+                FailPending(exception);
+                cancelledElevationMode = true;
+                waitForLaunchModeChange = true;
+                RaiseHostLaunchFailed(HostLaunchFailure.ElevationCancelled);
             }
             catch (Exception exception) when (IsRecoverableConnectionException(exception))
             {
@@ -266,6 +356,7 @@ public sealed class HostClient : IAsyncDisposable, IHostSession, IScriptValidati
                     if (ReferenceEquals(stream, connectedStream))
                     {
                         stream = null;
+                        connectedHostElevated = null;
                     }
                 }
                 connectedStream?.Dispose();
@@ -283,8 +374,16 @@ public sealed class HostClient : IAsyncDisposable, IHostSession, IScriptValidati
                 }
             }
 
-            await Task.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
-            retryDelay = IncreaseDelay(retryDelay);
+            if (waitForLaunchModeChange)
+            {
+                await WaitForLaunchModeChangeAsync(cancelledElevationMode, cancellationToken).ConfigureAwait(false);
+                retryDelay = TimeSpan.FromMilliseconds(100);
+            }
+            else
+            {
+                await Task.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
+                retryDelay = IncreaseDelay(retryDelay);
+            }
         }
     }
 
@@ -518,6 +617,31 @@ public sealed class HostClient : IAsyncDisposable, IHostSession, IScriptValidati
             (this, handler));
     }
 
+    private void RaiseHostLaunchFailed(HostLaunchFailure failure)
+    {
+        EventHandler<HostLaunchFailure>? handler = hostLaunchFailed;
+        if (handler is null)
+        {
+            return;
+        }
+
+        SynchronizationContext? context = eventContext;
+        if (context is null || ReferenceEquals(context, SynchronizationContext.Current))
+        {
+            handler(this, failure);
+            return;
+        }
+
+        context.Post(
+            static value =>
+            {
+                var invocation =
+                    ((HostClient Client, EventHandler<HostLaunchFailure> Handler, HostLaunchFailure Failure))value!;
+                invocation.Handler(invocation.Client, invocation.Failure);
+            },
+            (this, handler, failure));
+    }
+
     private void SetConnected(bool connected)
     {
         if (isConnected == connected)
@@ -568,6 +692,21 @@ public sealed class HostClient : IAsyncDisposable, IHostSession, IScriptValidati
 
     private static TimeSpan IncreaseDelay(TimeSpan current) =>
         TimeSpan.FromMilliseconds(Math.Min(current.TotalMilliseconds * 2, 5000));
+
+    internal static bool ResolveHostElevationRequirement(
+        bool elevatedInputCompatibility,
+        bool uiProcessElevated) =>
+        elevatedInputCompatibility || uiProcessElevated;
+
+    private async Task WaitForLaunchModeChangeAsync(
+        bool cancelledElevationMode,
+        CancellationToken cancellationToken)
+    {
+        while (Volatile.Read(ref requireElevatedInputCompatibility) == cancelledElevationMode)
+        {
+            await Task.Delay(100, cancellationToken).ConfigureAwait(false);
+        }
+    }
 
     private static bool IsRecoverableConnectionException(Exception exception) =>
         exception is IOException or TimeoutException or JsonException or HostProtocolException or Win32Exception;

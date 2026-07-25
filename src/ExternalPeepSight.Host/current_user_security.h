@@ -6,6 +6,9 @@
 
 namespace external_peepsight
 {
+/// Returns whether the current process token is elevated.
+[[nodiscard]] bool is_current_process_elevated();
+
 /// Owns a security descriptor that grants full access only to SYSTEM and the current user.
 class CurrentUserSecurity
 {

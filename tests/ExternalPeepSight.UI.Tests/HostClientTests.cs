@@ -1,4 +1,5 @@
 ﻿using ExternalPeepSight.UI.Services;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Buffers.Binary;
 using System.IO.Pipes;
@@ -22,6 +23,7 @@ public sealed class HostClientTests
                     $@"pipeName=\\.\pipe\ExternalPeepSight.{instanceId}.test",
                     $"token={new string('a', 64)}",
                     $"processId={Environment.ProcessId}",
+                    "elevated=0",
                 ]);
 
             HostEndpoint? endpoint = HostEndpoint.TryRead(instanceId);
@@ -29,6 +31,35 @@ public sealed class HostClientTests
             Assert.NotNull(endpoint);
             Assert.Equal($@"ExternalPeepSight.{instanceId}.test", endpoint.GetPipeNameForClient());
             Assert.Equal(Environment.ProcessId, endpoint.ProcessId);
+            Assert.False(endpoint.IsElevated);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void LegacyEndpointWithoutElevationMetadataDefaultsToStandardMode()
+    {
+        string instanceId = CreateInstanceId();
+        string path = HostEndpoint.GetDiscoveryPath(instanceId);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        try
+        {
+            File.WriteAllLines(
+                path,
+                [
+                    "protocolVersion=1",
+                    $@"pipeName=\\.\pipe\ExternalPeepSight.{instanceId}.test",
+                    $"token={new string('a', 64)}",
+                    $"processId={Environment.ProcessId}",
+                ]);
+
+            HostEndpoint? endpoint = HostEndpoint.TryRead(instanceId);
+
+            Assert.NotNull(endpoint);
+            Assert.False(endpoint.IsElevated);
         }
         finally
         {
@@ -51,6 +82,7 @@ public sealed class HostClientTests
                     @"pipeName=\\.\pipe\ExternalPeepSight.another.test",
                     $"token={new string('b', 64)}",
                     $"processId={Environment.ProcessId}",
+                    "elevated=0",
                 ]);
 
             Assert.Null(HostEndpoint.TryRead(instanceId));
@@ -77,6 +109,7 @@ public sealed class HostClientTests
                     $"token={new string('c', 64)}",
                     $"token={new string('d', 64)}",
                     $"processId={Environment.ProcessId}",
+                    "elevated=0",
                 ]);
 
             Assert.Null(HostEndpoint.TryRead(instanceId));
@@ -126,7 +159,11 @@ public sealed class HostClientTests
     [InlineData(9_007_199_254_740_992UL)]
     public async Task ConfigurationVersionOutsideJsonIntegerRangeIsRejected(ulong version)
     {
-        await using var client = new HostClient(CreateInstanceId(), startHostIfMissing: false);
+        await using var client = new HostClient(
+            CreateInstanceId(),
+            startHostIfMissing: false,
+            requireElevatedInputCompatibility: false,
+            uiProcessElevated: false);
         using JsonDocument document = JsonDocument.Parse("{}");
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
@@ -139,11 +176,60 @@ public sealed class HostClientTests
     [Fact]
     public async Task StartingClientTwiceIsRejected()
     {
-        await using var client = new HostClient(CreateInstanceId(), startHostIfMissing: false);
+        await using var client = new HostClient(
+            CreateInstanceId(),
+            startHostIfMissing: false,
+            requireElevatedInputCompatibility: false,
+            uiProcessElevated: false);
 
         client.Start();
 
         Assert.Throws<InvalidOperationException>(client.Start);
+    }
+
+    [Theory]
+    [InlineData(false, false, "")]
+    [InlineData(true, true, "runas")]
+    public void HostStartInfoUsesRequestedElevationMode(
+        bool requireElevatedInputCompatibility,
+        bool expectedShellExecute,
+        string expectedVerb)
+    {
+        string root = Path.Combine(Path.GetTempPath(), "ExternalPeepSight.UI.Tests", Guid.NewGuid().ToString("N"));
+        string executable = Path.Combine(root, "ExternalPeepSight.Host.exe");
+        string assetRoot = Path.Combine(root, "assets");
+        string uiExecutable = Path.Combine(root, "ExternalPeepSight.UI.exe");
+
+        ProcessStartInfo startInfo = HostProcessManager.CreateStartInfo(
+            executable,
+            "test-instance",
+            assetRoot,
+            uiExecutable,
+            requireElevatedInputCompatibility);
+
+        Assert.Equal(expectedShellExecute, startInfo.UseShellExecute);
+        Assert.Equal(expectedVerb, startInfo.Verb);
+        Assert.Equal(Path.GetFullPath(executable), startInfo.FileName);
+        Assert.Contains("--instance-id=test-instance", startInfo.ArgumentList);
+        Assert.Contains($"--assets-root={Path.GetFullPath(assetRoot)}", startInfo.ArgumentList);
+        Assert.Contains($"--ui-path={Path.GetFullPath(uiExecutable)}", startInfo.ArgumentList);
+    }
+
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(true, false, true)]
+    [InlineData(false, true, true)]
+    [InlineData(true, true, true)]
+    public void ElevatedUiForcesElevatedHostWithoutRestartLoop(
+        bool elevatedInputCompatibility,
+        bool uiProcessElevated,
+        bool expectedElevation)
+    {
+        Assert.Equal(
+            expectedElevation,
+            HostClient.ResolveHostElevationRequirement(
+                elevatedInputCompatibility,
+                uiProcessElevated));
     }
 
     [Fact]
@@ -161,6 +247,7 @@ public sealed class HostClientTests
                 $@"pipeName=\\.\pipe\{pipeName}",
                 $"token={token}",
                 $"processId={Environment.ProcessId}",
+                "elevated=0",
             ]);
 
         using var serverShutdown = new CancellationTokenSource();
@@ -172,7 +259,11 @@ public sealed class HostClientTests
             serverShutdown.Token);
         var hostExited =
             new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var client = new HostClient(instanceId, startHostIfMissing: true);
+        var client = new HostClient(
+            instanceId,
+            startHostIfMissing: true,
+            requireElevatedInputCompatibility: false,
+            uiProcessElevated: false);
         client.HostExited += (_, _) => hostExited.TrySetResult();
 
         try
@@ -209,6 +300,7 @@ public sealed class HostClientTests
                 $@"pipeName=\\.\pipe\{pipeName}",
                 $"token={token}",
                 $"processId={Environment.ProcessId}",
+                "elevated=0",
             ]);
 
         using var serverShutdown = new CancellationTokenSource();
@@ -221,7 +313,11 @@ public sealed class HostClientTests
             serverShutdown.Token);
         var synchronizedVersion =
             new TaskCompletionSource<ulong>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var client = new HostClient(instanceId, startHostIfMissing: false);
+        var client = new HostClient(
+            instanceId,
+            startHostIfMissing: false,
+            requireElevatedInputCompatibility: false,
+            uiProcessElevated: false);
         client.StateChanged += (_, state) =>
         {
             if (state.TryGetProperty("configurationVersion", out JsonElement version) &&

@@ -9,6 +9,7 @@ namespace ExternalPeepSight.UI.Services;
 internal sealed class ConfigurationWorkspace : ObservableObject, IDisposable
 {
     private readonly IHostSession hostSession;
+    private readonly IHostLaunchModeSession? hostLaunchModeSession;
     private readonly AtomicConfigurationStore store;
     private readonly string assetsRoot;
     private readonly LocalizationService localization;
@@ -29,6 +30,7 @@ internal sealed class ConfigurationWorkspace : ObservableObject, IDisposable
         ConfigurationDocument initialDocument)
     {
         this.hostSession = hostSession;
+        hostLaunchModeSession = hostSession as IHostLaunchModeSession;
         this.store = store;
         this.assetsRoot = Path.GetFullPath(assetsRoot);
         this.localization = localization;
@@ -39,6 +41,10 @@ internal sealed class ConfigurationWorkspace : ObservableObject, IDisposable
         isHostConnected = hostSession.IsConnected;
         hostSession.StateChanged += OnHostStateChanged;
         hostSession.ConnectionChanged += OnHostConnectionChanged;
+        if (hostLaunchModeSession is not null)
+        {
+            hostLaunchModeSession.HostLaunchFailed += OnHostLaunchFailed;
+        }
         hostSession.Start();
     }
 
@@ -85,6 +91,25 @@ internal sealed class ConfigurationWorkspace : ObservableObject, IDisposable
     public void DismissError() => ErrorMessage = null;
 
     public void ReportError(string resourceKey) => ErrorMessage = localization[resourceKey];
+
+    public async Task SetElevatedInputCompatibilityAsync(bool enabled)
+    {
+        if (hostLaunchModeSession is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await hostLaunchModeSession.SetElevatedInputCompatibilityAsync(enabled).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (
+            exception is IOException or InvalidOperationException or OperationCanceledException)
+        {
+            ApplicationLog.Write("host.compatibility_mode_restart_failed", exception);
+            ErrorMessage = localization["App.HostError"];
+        }
+    }
 
     public Task<JsonElement> ValidateScriptAsync(
         JsonElement payload,
@@ -398,6 +423,10 @@ internal sealed class ConfigurationWorkspace : ObservableObject, IDisposable
     {
         hostSession.StateChanged -= OnHostStateChanged;
         hostSession.ConnectionChanged -= OnHostConnectionChanged;
+        if (hostLaunchModeSession is not null)
+        {
+            hostLaunchModeSession.HostLaunchFailed -= OnHostLaunchFailed;
+        }
         saveCancellation?.Cancel();
         saveCancellation?.Dispose();
         try
@@ -505,6 +534,15 @@ internal sealed class ConfigurationWorkspace : ObservableObject, IDisposable
     private void OnHostConnectionChanged(object? sender, bool connected)
     {
         IsHostConnected = connected;
+    }
+
+    private void OnHostLaunchFailed(object? sender, HostLaunchFailure failure)
+    {
+        ErrorMessage = failure switch
+        {
+            HostLaunchFailure.ElevationCancelled => localization["App.HostElevationCancelled"],
+            _ => localization["App.HostError"],
+        };
     }
 
     private void OnHostStateChanged(object? sender, JsonElement state)

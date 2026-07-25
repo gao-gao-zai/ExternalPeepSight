@@ -10,6 +10,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -143,22 +144,23 @@ void expect_server_disconnects(_In_ const HANDLE pipe)
 class RunningServer
 {
   public:
-    RunningServer()
+    explicit RunningServer(external_peepsight::IpcHostState::RestartHandler restart_handler = {})
         : registration_(L"test-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()),
                         false),
-          server_(registration_.endpoint(), state_), thread_(
-                                                         [this](const std::stop_token stop_token)
-                                                         {
-                                                             try
-                                                             {
-                                                                 server_.run(stop_token);
-                                                             }
-                                                             catch (...)
-                                                             {
-                                                                 std::scoped_lock lock(failure_mutex_);
-                                                                 failure_ = std::current_exception();
-                                                             }
-                                                         })
+          state_({}, {}, {}, std::move(restart_handler)), server_(registration_.endpoint(), state_),
+          thread_(
+              [this](const std::stop_token stop_token)
+              {
+                  try
+                  {
+                      server_.run(stop_token);
+                  }
+                  catch (...)
+                  {
+                      std::scoped_lock lock(failure_mutex_);
+                      failure_ = std::current_exception();
+                  }
+              })
     {
     }
 
@@ -315,6 +317,27 @@ TEST(NamedPipeServer, AuthenticatesAppliesAndRestoresStateAfterReconnect)
 
     EXPECT_NE(std::string::npos, state.find("\"configurationVersion\":5"));
     EXPECT_NE(std::string::npos, state.find("\"profile\":\"alpha\""));
+    server.rethrow_if_failed();
+}
+
+TEST(NamedPipeServer, AcknowledgesAuthenticatedRestartBeforeInvokingHandler)
+{
+    std::atomic_bool restarted = false;
+    RunningServer server([&restarted] { restarted.store(true, std::memory_order_release); });
+    UniqueHandle client = connect_client(server.endpoint().pipe_name);
+    ASSERT_NE(nullptr, client);
+    authenticate(client.get(), server.endpoint());
+
+    write_message(client.get(), envelope("12121212-3434-5656-7878-909090909090", "RestartHost", "null"));
+    const std::string response = read_message(client.get());
+
+    EXPECT_NE(std::string::npos, response.find("\"command\":\"RestartHost\""));
+    for (int attempt = 0; attempt < 50 && !restarted.load(std::memory_order_acquire); ++attempt)
+    {
+        std::this_thread::sleep_for(10ms);
+    }
+    EXPECT_TRUE(restarted.load(std::memory_order_acquire));
+    expect_server_disconnects(client.get());
     server.rethrow_if_failed();
 }
 

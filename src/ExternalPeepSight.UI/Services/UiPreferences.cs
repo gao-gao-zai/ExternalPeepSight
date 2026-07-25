@@ -9,9 +9,12 @@ internal enum AppTheme
     Dark,
 }
 
-internal sealed record UiPreferences(AppTheme Theme, string CultureName)
+internal sealed record UiPreferences(
+    AppTheme Theme,
+    string CultureName,
+    bool ElevatedInputCompatibility = false)
 {
-    public static UiPreferences Default { get; } = new(AppTheme.System, "zh-CN");
+    public static UiPreferences Default { get; } = new(AppTheme.System, "zh-CN", false);
 }
 
 internal sealed class UiPreferencesStore

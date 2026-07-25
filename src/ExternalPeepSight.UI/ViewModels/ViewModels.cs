@@ -1662,6 +1662,7 @@ internal sealed class SettingsViewModel : WorkspaceViewModel
     private readonly UiPreferencesStore preferencesStore;
     private AppTheme theme;
     private string cultureName;
+    private bool elevatedInputCompatibility;
 
     public SettingsViewModel(
         ConfigurationWorkspace workspace,
@@ -1676,6 +1677,7 @@ internal sealed class SettingsViewModel : WorkspaceViewModel
         this.preferencesStore = preferencesStore;
         theme = preferences.Theme;
         cultureName = preferences.CultureName;
+        elevatedInputCompatibility = preferences.ElevatedInputCompatibility;
         Themes =
         [
             new(AppTheme.System, "Settings.ThemeSystem", localization),
@@ -1734,6 +1736,19 @@ internal sealed class SettingsViewModel : WorkspaceViewModel
     {
         get => Workspace.Document.InputBackend;
         set => Workspace.UpdateDocument(document => document with { InputBackend = value });
+    }
+
+    public bool ElevatedInputCompatibility
+    {
+        get => elevatedInputCompatibility;
+        set
+        {
+            if (SetProperty(ref elevatedInputCompatibility, value))
+            {
+                SavePreferences();
+                _ = Workspace.SetElevatedInputCompatibilityAsync(value);
+            }
+        }
     }
 
     public bool ToastEnabled
@@ -1808,7 +1823,7 @@ internal sealed class SettingsViewModel : WorkspaceViewModel
         Workspace.UpdateDocument(document => document with { Toasts = update(document.Toasts) });
 
     private void SavePreferences() =>
-        preferencesStore.Save(new UiPreferences(Theme, CultureName));
+        preferencesStore.Save(new UiPreferences(Theme, CultureName, ElevatedInputCompatibility));
 
     private static void UpdateColor(string value, Action<RgbaColor> update)
     {

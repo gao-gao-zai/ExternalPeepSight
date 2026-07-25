@@ -25,6 +25,8 @@ using external_peepsight::InputLogicalSwitch;
 using external_peepsight::InputModifiers;
 using external_peepsight::InputMouseButton;
 using external_peepsight::InputSwitchOperation;
+using external_peepsight::InputTransitionMerger;
+using external_peepsight::InputTransitionSource;
 using external_peepsight::InputVisibilityRule;
 using external_peepsight::RawInputBinding;
 using external_peepsight::ScriptInputBinding;
@@ -127,6 +129,61 @@ TEST(HotkeyStateMachine, ToggleChangesOnceAndSuppressesRepeatedKeyDown)
     ASSERT_TRUE(first.has_value());
     EXPECT_TRUE(first->switch_a);
     EXPECT_FALSE(repeated.has_value());
+}
+
+TEST(InputTransitionMerger, PollingReleaseDoesNotCancelCapturedPress)
+{
+    InputTransitionMerger merger;
+
+    const auto pressed =
+        merger.handle({kKeyA.device, kKeyA.code, kKeyA.extended}, true, InputTransitionSource::captured_event);
+    const auto polling_release =
+        merger.handle({kKeyA.device, kKeyA.code, kKeyA.extended}, false, InputTransitionSource::polling);
+
+    ASSERT_TRUE(pressed.has_value());
+    EXPECT_TRUE(pressed->pressed);
+    EXPECT_FALSE(polling_release.has_value());
+}
+
+TEST(InputTransitionMerger, ReleasesOnlyAfterEverySourceReleases)
+{
+    InputTransitionMerger merger;
+    const external_peepsight::InputPhysicalKey key{kKeyA.device, kKeyA.code, kKeyA.extended};
+
+    static_cast<void>(merger.handle(key, true, InputTransitionSource::captured_event));
+    const auto polling_press = merger.handle(key, true, InputTransitionSource::polling);
+    const auto captured_release = merger.handle(key, false, InputTransitionSource::captured_event);
+    const auto polling_release = merger.handle(key, false, InputTransitionSource::polling);
+
+    EXPECT_FALSE(polling_press.has_value());
+    EXPECT_FALSE(captured_release.has_value());
+    ASSERT_TRUE(polling_release.has_value());
+    EXPECT_FALSE(polling_release->pressed);
+}
+
+TEST(InputTransitionMerger, SuppressesRepeatedCapturedPress)
+{
+    InputTransitionMerger merger;
+    const external_peepsight::InputPhysicalKey key{kKeyA.device, kKeyA.code, kKeyA.extended};
+
+    const auto first = merger.handle(key, true, InputTransitionSource::captured_event);
+    const auto repeated = merger.handle(key, true, InputTransitionSource::captured_event);
+
+    ASSERT_TRUE(first.has_value());
+    EXPECT_FALSE(repeated.has_value());
+}
+
+TEST(InputTransitionMerger, ResetAllowsTheSameKeyToPressAgain)
+{
+    InputTransitionMerger merger;
+    const external_peepsight::InputPhysicalKey key{kKeyA.device, kKeyA.code, kKeyA.extended};
+    static_cast<void>(merger.handle(key, true, InputTransitionSource::captured_event));
+
+    merger.reset();
+    const auto pressed_again = merger.handle(key, true, InputTransitionSource::captured_event);
+
+    ASSERT_TRUE(pressed_again.has_value());
+    EXPECT_TRUE(pressed_again->pressed);
 }
 
 TEST(HotkeyStateMachine, MouseToggleUsesTheSameRepeatAndReleaseRules)
@@ -316,7 +373,19 @@ TEST(InputBindingPlan, LowLevelHookDeduplicatesPollingKeysAcrossModifiedBindings
                                                             {InputDeviceKind::keyboard, 0x1EU, false}, 0x41U}));
 }
 
-TEST(InputBindingPlan, RawInputDoesNotCreateKeyboardPollingPlan)
+TEST(InputBindingPlan, RawInputAddsKeyboardPollingFallbackForTransitionBinding)
+{
+    InputConfiguration configuration = unbound_configuration();
+    configuration.switch_a = toggle_binding(kKeyA);
+
+    const auto plan = external_peepsight::build_input_binding_plan(configuration);
+
+    ASSERT_EQ(1U, plan.polling_keys.size());
+    EXPECT_EQ((external_peepsight::InputPollingKey{{InputDeviceKind::keyboard, 0x1EU, false}, 0x41U}),
+              plan.polling_keys.front());
+}
+
+TEST(InputBindingPlan, RawInputDoesNotPollRegisterHotKeyOnlyBinding)
 {
     InputConfiguration configuration = unbound_configuration();
     configuration.switch_a = toggle_binding(kCtrlKeyA);
@@ -646,6 +715,29 @@ TEST(GlobalInputService, RawInputBackendAcceptsLowLevelKeyboardRedundancy)
     service.start();
     const external_peepsight::InputApplyResult result = service.apply_configuration(configuration);
     const HWND input_window = find_current_process_input_window();
+    const LPARAM packed_key_down = static_cast<LPARAM>(kKeyA.code | (1U << 17U));
+    SendMessageW(input_window, kHookKeyboardMessage, 0U, packed_key_down);
+    service.stop();
+
+    ASSERT_TRUE(result.applied);
+    ASSERT_NE(nullptr, input_window);
+    EXPECT_TRUE(last_visible.load(std::memory_order_acquire));
+}
+
+TEST(GlobalInputService, ForegroundChangesKeepKeyboardTransitionsOperational)
+{
+    std::atomic<bool> last_visible = false;
+    external_peepsight::GlobalInputService service([&last_visible](const external_peepsight::InputStateSnapshot state)
+                                                   { last_visible.store(state.visible, std::memory_order_release); });
+    InputConfiguration configuration = unbound_configuration();
+    configuration.switch_a = toggle_binding(kKeyA);
+
+    service.start();
+    const external_peepsight::InputApplyResult result = service.apply_configuration(configuration);
+    const HWND input_window = find_current_process_input_window();
+    service.notify_foreground_changed();
+    service.notify_foreground_changed();
+    std::this_thread::sleep_for(std::chrono::milliseconds(400));
     const LPARAM packed_key_down = static_cast<LPARAM>(kKeyA.code | (1U << 17U));
     SendMessageW(input_window, kHookKeyboardMessage, 0U, packed_key_down);
     service.stop();

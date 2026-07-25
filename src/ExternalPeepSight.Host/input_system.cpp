@@ -36,10 +36,13 @@ constexpr wchar_t kInputWindowClassName[] = L"ExternalPeepSight.Input.Window";
 constexpr UINT kApplyConfigurationMessage = WM_APP + 1U;
 constexpr UINT kHookKeyboardMessage = WM_APP + 2U;
 constexpr UINT kHookMouseMessage = WM_APP + 3U;
+constexpr UINT kRefreshKeyboardHookMessage = WM_APP + 4U;
 constexpr UINT_PTR kKeyboardPollingTimerId = 1U;
+constexpr UINT_PTR kKeyboardHookRefreshTimerId = 2U;
 constexpr int kFirstHotkeyIdentifier = 100;
 constexpr DWORD kApplyConfigurationTimeoutMs = 5'000U;
 constexpr UINT kKeyboardPollingIntervalMs = 12U;
+constexpr UINT kKeyboardHookRefreshDelayMs = 250U;
 constexpr InputModifiers kKnownModifiers =
     InputModifiers::ctrl | InputModifiers::alt | InputModifiers::shift | InputModifiers::win;
 
@@ -427,7 +430,7 @@ void add_modifier_polling_keys(InputBindingPlan &plan, const InputModifiers modi
     }
 }
 
-void add_low_level_polling_keys(InputBindingPlan &plan)
+void add_keyboard_polling_keys(InputBindingPlan &plan)
 {
     for (const RawInputBinding &binding : plan.raw_bindings)
     {
@@ -616,10 +619,7 @@ InputBindingPlan build_input_binding_plan(const InputConfiguration &configuratio
         used_keys.push_back(binding.key);
         plan.script_bindings.push_back(binding);
     }
-    if (configuration.input_backend == InputCaptureBackend::low_level_hook)
-    {
-        add_low_level_polling_keys(plan);
-    }
+    add_keyboard_polling_keys(plan);
     return plan;
 }
 
@@ -782,6 +782,40 @@ std::optional<RawInputTransition> decode_low_level_mouse_input(const WPARAM mess
         {InputDeviceKind::mouse, static_cast<std::uint16_t>(button), false},
         pressed,
     };
+}
+
+std::optional<RawInputTransition> InputTransitionMerger::handle(const InputPhysicalKey key, const bool pressed,
+                                                                const InputTransitionSource source)
+{
+    auto position = std::ranges::find_if(states_, [key](const SourceState &candidate) { return candidate.key == key; });
+    if (position == states_.end())
+    {
+        if (!pressed)
+        {
+            return std::nullopt;
+        }
+        position = states_.insert(states_.end(), {key, false, false});
+    }
+
+    const bool was_pressed = position->captured_pressed || position->polling_pressed;
+    bool &source_pressed =
+        source == InputTransitionSource::captured_event ? position->captured_pressed : position->polling_pressed;
+    source_pressed = pressed;
+    const bool is_pressed = position->captured_pressed || position->polling_pressed;
+    if (!is_pressed)
+    {
+        states_.erase(position);
+    }
+    if (was_pressed == is_pressed)
+    {
+        return std::nullopt;
+    }
+    return RawInputTransition{key, is_pressed};
+}
+
+void InputTransitionMerger::reset() noexcept
+{
+    states_.clear();
 }
 
 InputStateSnapshot HotkeyStateMachine::configure(const InputConfiguration &configuration,
@@ -1028,6 +1062,15 @@ class GlobalInputService::Impl
         worker_.join();
     }
 
+    void notify_foreground_changed() noexcept
+    {
+        const HWND window = window_.load(std::memory_order_acquire);
+        if (window != nullptr)
+        {
+            static_cast<void>(PostMessageW(window, kRefreshKeyboardHookMessage, 0U, 0));
+        }
+    }
+
   private:
     static LRESULT CALLBACK window_proc(_In_ const HWND window, const UINT message, const WPARAM word_parameter,
                                         const LPARAM long_parameter) noexcept
@@ -1250,8 +1293,10 @@ class GlobalInputService::Impl
         if (timer_window != nullptr)
         {
             KillTimer(timer_window, kKeyboardPollingTimerId);
+            KillTimer(timer_window, kKeyboardHookRefreshTimerId);
         }
         unregister_hotkeys(active_plan_);
+        transition_merger_.reset();
         if (const auto reset = state_machine_.reset_pressed_keys())
         {
             publish(*reset);
@@ -1318,7 +1363,8 @@ class GlobalInputService::Impl
             const std::uint16_t scan_code = static_cast<std::uint16_t>(long_parameter & 0xFFFF);
             const bool extended = (long_parameter & (1 << 16)) != 0;
             const bool pressed = (long_parameter & (1 << 17)) != 0;
-            handle_input_transition({InputDeviceKind::keyboard, scan_code, extended}, pressed);
+            handle_input_transition({InputDeviceKind::keyboard, scan_code, extended}, pressed,
+                                    InputTransitionSource::captured_event);
             return 0;
         }
         case kHookMouseMessage:
@@ -1328,13 +1374,27 @@ class GlobalInputService::Impl
                 return 0;
             }
             handle_input_transition({InputDeviceKind::mouse, static_cast<std::uint16_t>(word_parameter), false},
-                                    long_parameter != 0);
+                                    long_parameter != 0, InputTransitionSource::captured_event);
             return 0;
         }
+        case kRefreshKeyboardHookMessage:
+            // WORKAROUND(remote-keyboard-hook-chain): Remote clients may install a swallowing keyboard hook after
+            // becoming foreground. Refresh after their foreground initialization so this observer returns to the
+            // front of the chain. Remove when tested clients expose a non-exclusive keyboard input mode.
+            if (SetTimer(window, kKeyboardHookRefreshTimerId, kKeyboardHookRefreshDelayMs, nullptr) == 0U)
+            {
+                refresh_keyboard_hook();
+            }
+            return 0;
         case WM_TIMER:
-            if (word_parameter == kKeyboardPollingTimerId && active_backend_ == InputCaptureBackend::low_level_hook)
+            if (word_parameter == kKeyboardPollingTimerId)
             {
                 poll_keyboard_state();
+            }
+            else if (word_parameter == kKeyboardHookRefreshTimerId)
+            {
+                KillTimer(window, kKeyboardHookRefreshTimerId);
+                refresh_keyboard_hook();
             }
             return 0;
         case WM_HOTKEY:
@@ -1422,9 +1482,7 @@ class GlobalInputService::Impl
         }
 
         const HWND window = window_.load(std::memory_order_acquire);
-        const bool needs_keyboard_polling =
-            effective_configuration.input_backend == InputCaptureBackend::low_level_hook &&
-            !candidate.polling_keys.empty();
+        const bool needs_keyboard_polling = !candidate.polling_keys.empty();
         if (needs_keyboard_polling &&
             SetTimer(window, kKeyboardPollingTimerId, kKeyboardPollingIntervalMs, nullptr) == 0U)
         {
@@ -1467,6 +1525,7 @@ class GlobalInputService::Impl
                 unregister_hotkeys(active_plan_);
                 active_plan_ = {};
                 modifier_keys_.clear();
+                transition_merger_.reset();
                 publish_script_events(script_state_machine_.reset_pressed_keys());
                 script_state_machine_.configure({});
                 configured_ = false;
@@ -1490,6 +1549,7 @@ class GlobalInputService::Impl
             KillTimer(window, kKeyboardPollingTimerId);
         }
         modifier_keys_.clear();
+        transition_merger_.reset();
         configured_ = true;
         publish_script_events(script_state_machine_.reset_pressed_keys());
         script_state_machine_.configure(active_plan_.script_bindings);
@@ -1534,37 +1594,44 @@ class GlobalInputService::Impl
 
         for (const RawInputTransition &transition : parse_raw_input(buffer))
         {
-            handle_input_transition(transition.key, transition.pressed);
+            handle_input_transition(transition.key, transition.pressed, InputTransitionSource::captured_event);
         }
     }
 
-    void handle_input_transition(const InputPhysicalKey physical, const bool pressed)
+    void handle_input_transition(const InputPhysicalKey physical, const bool pressed,
+                                 const InputTransitionSource source)
     {
+        const std::optional<RawInputTransition> merged = transition_merger_.handle(physical, pressed, source);
+        if (!merged)
+        {
+            return;
+        }
+
         const InputModifiers current_modifiers = modifiers();
-        const InputModifiers key_modifier = modifier_for_key(physical);
+        const InputModifiers key_modifier = modifier_for_key(merged->key);
         const InputModifiers event_modifiers = key_modifier == InputModifiers::none
                                                    ? current_modifiers
                                                    : without_modifier(current_modifiers, key_modifier);
 
         if (key_modifier != InputModifiers::none)
         {
-            const auto position = std::ranges::find(modifier_keys_, physical);
-            if (pressed && position == modifier_keys_.end())
+            const auto position = std::ranges::find(modifier_keys_, merged->key);
+            if (merged->pressed && position == modifier_keys_.end())
             {
-                modifier_keys_.push_back(physical);
+                modifier_keys_.push_back(merged->key);
             }
-            else if (!pressed && position != modifier_keys_.end())
+            else if (!merged->pressed && position != modifier_keys_.end())
             {
                 modifier_keys_.erase(position);
             }
         }
 
-        const InputKeyIdentity identity{physical.device, physical.code, physical.extended, event_modifiers};
-        if (const auto update = state_machine_.handle_key(identity, pressed))
+        const InputKeyIdentity identity{merged->key.device, merged->key.code, merged->key.extended, event_modifiers};
+        if (const auto update = state_machine_.handle_key(identity, merged->pressed))
         {
             publish(*update);
         }
-        if (const auto script_event = script_state_machine_.handle_key(identity, pressed))
+        if (const auto script_event = script_state_machine_.handle_key(identity, merged->pressed))
         {
             publish_script_event(*script_event);
         }
@@ -1583,6 +1650,7 @@ class GlobalInputService::Impl
     void reset_pressed_keys()
     {
         modifier_keys_.clear();
+        transition_merger_.reset();
         if (const auto update = state_machine_.reset_pressed_keys())
         {
             publish(*update);
@@ -1612,7 +1680,7 @@ class GlobalInputService::Impl
             {
                 if (modifier_for_key(sample.key) != InputModifiers::none && sample.pressed == pressed)
                 {
-                    handle_input_transition(sample.key, sample.pressed);
+                    handle_input_transition(sample.key, sample.pressed, InputTransitionSource::polling);
                 }
             }
         };
@@ -1621,10 +1689,38 @@ class GlobalInputService::Impl
         {
             if (modifier_for_key(sample.key) == InputModifiers::none)
             {
-                handle_input_transition(sample.key, sample.pressed);
+                handle_input_transition(sample.key, sample.pressed, InputTransitionSource::polling);
             }
         }
         process_modifiers(false);
+    }
+
+    void refresh_keyboard_hook() noexcept
+    {
+        const HHOOK replacement =
+            SetWindowsHookExW(WH_KEYBOARD_LL, low_level_keyboard_proc, GetModuleHandleW(nullptr), 0U);
+        if (replacement == nullptr)
+        {
+            log_diagnostic(DiagnosticLevel::warning, "input.keyboard_hook_refresh_failed",
+                           "The low-level keyboard hook could not be refreshed.",
+                           NativeErrorStatus{NativeErrorDomain::win32, GetLastError()});
+            return;
+        }
+
+        hook_owner_.store(this, std::memory_order_release);
+        const HHOOK previous = std::exchange(low_level_hook_, replacement);
+        if (previous != nullptr && !UnhookWindowsHookEx(previous))
+        {
+            const DWORD error = GetLastError();
+            if (error != ERROR_INVALID_HOOK_HANDLE)
+            {
+                log_diagnostic(DiagnosticLevel::warning, "input.keyboard_hook_release_failed",
+                               "The previous low-level keyboard hook could not be released.",
+                               NativeErrorStatus{NativeErrorDomain::win32, error});
+            }
+        }
+        log_diagnostic(DiagnosticLevel::information, "input.keyboard_hook_refreshed",
+                       "The low-level keyboard hook was refreshed after a foreground change.");
     }
 
     [[nodiscard]] bool low_level_backend_available() const noexcept
@@ -1664,6 +1760,7 @@ class GlobalInputService::Impl
     std::atomic<HWND> window_ = nullptr;
     HotkeyStateMachine state_machine_;
     ScriptInputStateMachine script_state_machine_;
+    InputTransitionMerger transition_merger_;
     InputBindingPlan active_plan_;
     InputCaptureBackend active_backend_ = InputCaptureBackend::raw_input;
     std::vector<InputPhysicalKey> modifier_keys_;
@@ -1700,5 +1797,10 @@ InputApplyResult GlobalInputService::apply_configuration(const InputConfiguratio
 void GlobalInputService::stop() noexcept
 {
     impl_->stop();
+}
+
+void GlobalInputService::notify_foreground_changed() noexcept
+{
+    impl_->notify_foreground_changed();
 }
 } // namespace external_peepsight

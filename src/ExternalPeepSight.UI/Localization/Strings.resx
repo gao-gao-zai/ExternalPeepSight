@@ -9,6 +9,7 @@
   <data name="App.HostConnected" xml:space="preserve"><value>Host connected</value></data>
   <data name="App.HostConnecting" xml:space="preserve"><value>Connecting to Host</value></data>
   <data name="App.HostError" xml:space="preserve"><value>Host rejected the latest change. The last valid configuration is still active.</value></data>
+  <data name="App.HostElevationCancelled" xml:space="preserve"><value>Administrator input compatibility was not enabled because the elevation prompt was cancelled.</value></data>
   <data name="App.HostRequestError" xml:space="preserve"><value>Host rejected the latest change: {0}: {1} The last valid configuration is still active.</value></data>
   <data name="App.InvalidChange" xml:space="preserve"><value>The value is outside the supported range.</value></data>
   <data name="App.PersistenceError" xml:space="preserve"><value>The configuration could not be saved.</value></data>
@@ -177,6 +178,8 @@
   <data name="Settings.InputBackend" xml:space="preserve"><value>Keyboard and mouse backend</value></data>
   <data name="Settings.InputBackendRawInput" xml:space="preserve"><value>Raw Input</value></data>
   <data name="Settings.InputBackendLowLevelHook" xml:space="preserve"><value>Low-level hook (cloud desktop compatibility)</value></data>
+  <data name="Settings.ElevatedInputCompatibility" xml:space="preserve"><value>Administrator input compatibility</value></data>
+  <data name="Settings.ElevatedInputCompatibilityTip" xml:space="preserve"><value>Restarts the Host with administrator rights for elevated remote-control or target applications.</value></data>
   <data name="Settings.Toasts" xml:space="preserve"><value>Status notifications</value></data>
   <data name="Settings.ToastEnabled" xml:space="preserve"><value>Show Host notifications</value></data>
   <data name="Settings.ToastPosition" xml:space="preserve"><value>Position</value></data>

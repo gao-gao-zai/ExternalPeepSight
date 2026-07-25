@@ -198,6 +198,11 @@ void serve_client(_In_ const HANDLE pipe, const IpcEndpoint &endpoint, IpcHostSt
                 return;
             }
         }
+        if (result.restart_host)
+        {
+            host_state.restart_host();
+            return;
+        }
 
         if (!was_authenticated && session.authenticated())
         {

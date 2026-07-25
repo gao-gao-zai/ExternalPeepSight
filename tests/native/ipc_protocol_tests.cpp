@@ -361,4 +361,38 @@ TEST(IpcSession, RejectsScriptValidationWhenUnavailableOrInvalid)
     EXPECT_NE(std::string::npos, invalid_result.response_json.find("\"code\":\"InvalidScript\""));
     EXPECT_NE(std::string::npos, invalid_result.response_json.find("Script syntax is invalid."));
 }
+
+TEST(IpcSession, AuthenticatedRestartIsAcknowledgedAndDeferredUntilAfterResponse)
+{
+    initialize_winrt();
+    bool restarted = false;
+    external_peepsight::IpcHostState state({}, {}, {}, [&restarted] { restarted = true; });
+    external_peepsight::IpcSession session(state, std::string(kToken));
+    static_cast<void>(session.handle_message(
+        envelope("40000000-0000-0000-0000-000000000001", "Hello", "{\"token\":\"" + std::string(kToken) + "\"}")));
+
+    const auto result = session.handle_message(envelope("40000000-0000-0000-0000-000000000002", "RestartHost", "null"));
+
+    EXPECT_FALSE(result.disconnect);
+    EXPECT_TRUE(result.restart_host);
+    EXPECT_FALSE(restarted);
+    EXPECT_NE(std::string::npos, result.response_json.find("\"command\":\"RestartHost\""));
+
+    state.restart_host();
+    EXPECT_TRUE(restarted);
+}
+
+TEST(IpcSession, RejectsRestartWhenHandlerIsUnavailable)
+{
+    initialize_winrt();
+    external_peepsight::IpcHostState state;
+    external_peepsight::IpcSession session(state, std::string(kToken));
+    static_cast<void>(session.handle_message(
+        envelope("50000000-0000-0000-0000-000000000001", "Hello", "{\"token\":\"" + std::string(kToken) + "\"}")));
+
+    const auto result = session.handle_message(envelope("50000000-0000-0000-0000-000000000002", "RestartHost", "{}"));
+
+    EXPECT_FALSE(result.restart_host);
+    EXPECT_NE(std::string::npos, result.response_json.find("\"code\":\"CommandNotAvailable\""));
+}
 } // namespace

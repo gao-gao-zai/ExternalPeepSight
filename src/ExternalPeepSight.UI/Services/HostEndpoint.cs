@@ -4,7 +4,7 @@ using System.ComponentModel;
 
 namespace ExternalPeepSight.UI.Services;
 
-internal sealed record HostEndpoint(string PipeName, string Token, int ProcessId)
+internal sealed record HostEndpoint(string PipeName, string Token, int ProcessId, bool IsElevated)
 {
     private const int ProtocolVersion = 1;
 
@@ -23,7 +23,8 @@ internal sealed record HostEndpoint(string PipeName, string Token, int ProcessId
                 .Where(parts => parts.Length == 2)
                 .ToDictionary(parts => parts[0], parts => parts[1], StringComparer.Ordinal);
 
-            if (values.Count != 4 ||
+            bool hasElevationMetadata = values.TryGetValue("elevated", out string? elevatedText);
+            if (values.Count != (hasElevationMetadata ? 5 : 4) ||
                 !values.TryGetValue("protocolVersion", out string? protocolText) ||
                 !int.TryParse(protocolText, out int protocol) ||
                 protocol != ProtocolVersion ||
@@ -39,12 +40,17 @@ internal sealed record HostEndpoint(string PipeName, string Token, int ProcessId
                 !values.TryGetValue("processId", out string? processText) ||
                 !int.TryParse(processText, out int processId) ||
                 processId <= 0 ||
+                hasElevationMetadata && elevatedText is not "0" and not "1" ||
                 !IsProcessRunning(processId))
             {
                 return null;
             }
 
-            return new HostEndpoint(pipeName, token, processId);
+            return new HostEndpoint(
+                pipeName,
+                token,
+                processId,
+                hasElevationMetadata && elevatedText == "1");
         }
         catch (Exception exception) when (
             exception is IOException or UnauthorizedAccessException or ArgumentException)

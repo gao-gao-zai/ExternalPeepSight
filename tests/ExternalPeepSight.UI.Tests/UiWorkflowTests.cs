@@ -568,6 +568,20 @@ public sealed class UiWorkflowTests
     }
 
     [Fact]
+    public void ElevatedInputCompatibilityIsStoredAsApplicationPreference()
+    {
+        using TestContext context = CreateContext();
+        InputCaptureBackend originalBackend = context.Workspace.Document.InputBackend;
+
+        context.ViewModel.Settings.ElevatedInputCompatibility = true;
+
+        UiPreferences preferences =
+            new UiPreferencesStore(Path.Combine(context.Root, "preferences.json")).Load();
+        Assert.True(preferences.ElevatedInputCompatibility);
+        Assert.Equal(originalBackend, context.Workspace.Document.InputBackend);
+    }
+
+    [Fact]
     public void MonitorIdentityMatchesNativeNormalizationRules()
     {
         string first = MonitorIdentity.Create(

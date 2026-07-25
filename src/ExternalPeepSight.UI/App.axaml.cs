@@ -33,20 +33,23 @@ public partial class App : Application, IDisposable
         string[] arguments = desktop.Args ?? [];
         string instanceId = GetOptionValue(arguments, "--instance-id=") ?? "default";
         bool startHostIfMissing = !arguments.Contains("--connect-existing", StringComparer.Ordinal);
+        string applicationRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "ExternalPeepSight");
+        var preferencesStore = new UiPreferencesStore(Path.Combine(applicationRoot, "ui-preferences.json"));
+        UiPreferences preferences = preferencesStore.Load();
         if (startHostIfMissing)
         {
             HostProcessManager.ClearGracefulShutdown(instanceId);
         }
 
-        hostClient = new HostClient(instanceId, startHostIfMissing);
+        hostClient = new HostClient(
+            instanceId,
+            startHostIfMissing,
+            preferences.ElevatedInputCompatibility);
         hostClient.HostExited += OnHostExited;
 
-        string applicationRoot = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "ExternalPeepSight");
         string assetsRoot = Path.Combine(applicationRoot, "assets");
-        var preferencesStore = new UiPreferencesStore(Path.Combine(applicationRoot, "ui-preferences.json"));
-        UiPreferences preferences = preferencesStore.Load();
         var localization = new LocalizationService();
         localization.Apply(preferences.CultureName);
         var theme = new ThemeService();

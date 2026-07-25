@@ -85,10 +85,12 @@ class IpcHostState
     using ToastHandler = std::function<void(std::string_view)>;
     /// Authenticated script validation handler returning a JSON object payload.
     using ScriptValidator = std::function<std::string(std::string_view)>;
+    /// Authenticated Host restart handler.
+    using RestartHandler = std::function<void()>;
 
     /// Creates Host state with optional snapshot validation and side effects.
     explicit IpcHostState(SnapshotValidator validator = {}, ToastHandler toast_handler = {},
-                          ScriptValidator script_validator = {});
+                          ScriptValidator script_validator = {}, RestartHandler restart_handler = {});
 
     /// Applies a configuration only when its version is newer or exactly idempotent.
     [[nodiscard]] IpcApplyResult apply(std::uint64_t configuration_version, std::string snapshot_json);
@@ -116,6 +118,12 @@ class IpcHostState
     /// Validates one Lua script draft without changing configuration version.
     [[nodiscard]] std::string validate_script(std::string payload_json) const;
 
+    /// Returns whether authenticated clients may request a Host restart.
+    [[nodiscard]] bool restart_available() const noexcept;
+
+    /// Requests a Host restart after the protocol response has been written.
+    void restart_host() const;
+
   private:
     mutable std::mutex mutex_;
     mutable std::condition_variable_any host_snapshot_changed_;
@@ -125,6 +133,7 @@ class IpcHostState
     SnapshotValidator validator_;
     ToastHandler toast_handler_;
     ScriptValidator script_validator_;
+    RestartHandler restart_handler_;
 };
 
 /// Result of processing one client message.
@@ -134,6 +143,8 @@ struct IpcSessionResult
     std::string response_json;
     /// Whether the server must disconnect the client after sending the response.
     bool disconnect;
+    /// Whether the server must restart the Host after sending the response.
+    bool restart_host = false;
 };
 
 /// Enforces authentication, request identity, and version ordering for one connection.
