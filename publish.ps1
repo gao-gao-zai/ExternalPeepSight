@@ -4,8 +4,10 @@ param(
     [string]$Configuration = "Release",
     [ValidatePattern("^[0-9]+\.[0-9]+\.[0-9]+$")]
     [string]$Version = "0.1.0",
-    [ValidateSet("win-x64")]
+    [ValidateSet("win-x64", "win-x86")]
     [string]$Runtime = "win-x64",
+    [ValidateSet("SelfContained", "FrameworkDependent")]
+    [string]$Deployment = "SelfContained",
     [switch]$SkipChecks
 )
 
@@ -13,9 +15,13 @@ $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 $solution = Join-Path $root "ExternalPeepSight.sln"
 $uiProject = Join-Path $root "src\ExternalPeepSight.UI\ExternalPeepSight.UI.csproj"
-$nativeBuild = Join-Path $root "build\native\windows-release"
+$architecture = if ($Runtime -eq "win-x64") { "x64" } else { "x86" }
+$cmakeArchitecture = if ($architecture -eq "x64") { "x64" } else { "Win32" }
+$selfContained = $Deployment -eq "SelfContained"
+$deploymentSlug = if ($selfContained) { "self-contained" } else { "framework-dependent" }
+$nativeBuild = Join-Path $root "build\native\windows-release-$architecture"
 $releaseRoot = Join-Path $root "artifacts\release"
-$packageName = "ExternalPeepSight-v$Version-$Runtime"
+$packageName = "ExternalPeepSight-v$Version-$Runtime-$deploymentSlug"
 $packageDirectory = Join-Path $releaseRoot $packageName
 $uiPublishDirectory = Join-Path $packageDirectory "ui-publish"
 
@@ -71,6 +77,9 @@ function Copy-MsvcRuntime {
         [Parameter(Mandatory)]
         [string]$VisualStudioPath,
         [Parameter(Mandatory)]
+        [ValidateSet("x64", "x86")]
+        [string]$Architecture,
+        [Parameter(Mandatory)]
         [string]$Destination
     )
 
@@ -79,19 +88,23 @@ function Copy-MsvcRuntime {
         -Directory `
         -Recurse `
         -Filter "Microsoft.VC143.CRT" `
-        | Where-Object { $_.FullName -match "\\x64\\Microsoft\.VC143\.CRT$" } `
+        | Where-Object { $_.FullName -match "\\$Architecture\\Microsoft\.VC143\.CRT$" } `
         | Sort-Object LastWriteTime -Descending `
         | Select-Object -First 1
     if (-not $runtimeDirectory) {
-        throw "The x64 Microsoft Visual C++ runtime redistributable was not found."
+        throw "The $Architecture Microsoft Visual C++ runtime redistributable was not found."
     }
 
-    foreach ($fileName in @(
+    $runtimeFileNames = @(
         "msvcp140.dll",
         "msvcp140_atomic_wait.dll",
-        "vcruntime140.dll",
-        "vcruntime140_1.dll"
-    )) {
+        "vcruntime140.dll"
+    )
+    if ($Architecture -eq "x64") {
+        $runtimeFileNames += "vcruntime140_1.dll"
+    }
+
+    foreach ($fileName in $runtimeFileNames) {
         $source = Join-Path $runtimeDirectory.FullName $fileName
         if (-not (Test-Path -LiteralPath $source)) {
             throw "The MSVC runtime file was not found: $source"
@@ -126,7 +139,7 @@ Invoke-Step "Native configure" $cmake @(
     "-G",
     "Visual Studio 17 2022",
     "-A",
-    "x64",
+    $cmakeArchitecture,
     "-DBUILD_TESTING=OFF"
 )
 Invoke-Step "Native release build" $cmake @(
@@ -149,7 +162,7 @@ Invoke-Step "Restore publish runtime" $dotnet @(
     "--runtime",
     $Runtime
 )
-Invoke-Step "Managed self-contained publish" $dotnet @(
+Invoke-Step "Managed $deploymentSlug publish" $dotnet @(
     "publish",
     $uiProject,
     "--configuration",
@@ -157,10 +170,12 @@ Invoke-Step "Managed self-contained publish" $dotnet @(
     "--runtime",
     $Runtime,
     "--self-contained",
-    "true",
+    $selfContained.ToString().ToLowerInvariant(),
     "--output",
     $uiPublishDirectory,
     "--no-restore",
+    "/p:Version=$Version",
+    "/p:InformationalVersion=$Version",
     "/p:DebugType=None",
     "/p:DebugSymbols=false"
 )
@@ -173,22 +188,32 @@ if ($pdbFiles) {
 
 Copy-Item -LiteralPath $nativeHost `
     -Destination (Join-Path $uiPublishDirectory "ExternalPeepSight.Host.exe")
-Copy-MsvcRuntime -VisualStudioPath $vsPath -Destination $uiPublishDirectory
+Copy-MsvcRuntime `
+    -VisualStudioPath $vsPath `
+    -Architecture $architecture `
+    -Destination $uiPublishDirectory
 
 Copy-Item -LiteralPath (Join-Path $root "README.md") `
     -Destination (Join-Path $packageDirectory "README.md")
 Copy-Item -LiteralPath (Join-Path $root "LICENSE") `
     -Destination (Join-Path $packageDirectory "LICENSE")
+$dotnetRequirement = if ($selfContained) {
+    "The required .NET runtime is included."
+} else {
+    "Install the .NET 10 $architecture runtime before starting the application."
+}
 @"
 ExternalPeepSight $Version
 Runtime: $Runtime
+Deployment: $deploymentSlug
 Build configuration: $Configuration
 Build date: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss zzz")
 
 Start ExternalPeepSight.UI.exe from this directory.
-The native Host executable and the required x64 MSVC runtime files are beside it.
+The native Host executable and the required $architecture MSVC runtime files are beside it.
+$dotnetRequirement
 
-System requirement: Windows 10 or Windows 11 x64.
+System requirement: Windows 10 or Windows 11 with $architecture application support.
 This package is portable and stores user configuration under:
 %LOCALAPPDATA%\ExternalPeepSight
 
